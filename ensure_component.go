@@ -7,6 +7,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	applycorev1 "k8s.io/client-go/applyconfigurations/core/v1"
+
+	"github.com/authzed/controller-idioms/handler"
 )
 
 type Annotator[T any] interface {
@@ -22,7 +24,7 @@ type EnsureComponentByHash[K metav1.Object, A Annotator[A]] struct {
 	newObj       func(ctx context.Context) A
 }
 
-var _ Handler = &EnsureComponentByHash[*corev1.Service, *applycorev1.ServiceApplyConfiguration]{}
+var _ handler.ContextHandler = &EnsureComponentByHash[*corev1.Service, *applycorev1.ServiceApplyConfiguration]{}
 
 func NewEnsureComponentByHash[K metav1.Object, A Annotator[A]](
 	component *HashableComponent[K],

@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/authzed/controller-idioms/handler"
 )
 
 // ComponentContextHandler fills the value for a ContextKey with the result of
@@ -14,10 +16,10 @@ type ComponentContextHandler[K metav1.Object] struct {
 	owner     fmt.Stringer
 	ctxKey    SettableContext[[]K]
 	component *Component[K]
-	next      Handler
+	next      handler.ContextHandler
 }
 
-func NewComponentContextHandler[K metav1.Object](ctrls HandlerControls, contextKey SettableContext[[]K], component *Component[K], owner fmt.Stringer, next Handler) *ComponentContextHandler[K] {
+func NewComponentContextHandler[K metav1.Object](ctrls HandlerControls, contextKey SettableContext[[]K], component *Component[K], owner fmt.Stringer, next handler.ContextHandler) *ComponentContextHandler[K] {
 	return &ComponentContextHandler[K]{
 		HandlerControls: ctrls,
 		owner:           owner,

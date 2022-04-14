@@ -1,26 +1,10 @@
 package libctrl
 
 import (
-	"context"
 	"time"
 
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )
-
-// Handler is the interface for a "chunk" of reconciliation. It either returns,
-// often by adjusting the current key's place in the queue (i.e. via requeue or
-// done) or calls the Next handler in the chain.
-type Handler interface {
-	Handle(context.Context)
-}
-
-type HandlerFunc func(ctx context.Context)
-
-func (f HandlerFunc) Handle(ctx context.Context) {
-	f(ctx)
-}
-
-var NoopHandler HandlerFunc = func(ctx context.Context) {}
 
 type ControlDone interface {
 	Done()
