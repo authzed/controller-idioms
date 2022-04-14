@@ -3,6 +3,8 @@ package libctrl
 import (
 	"context"
 	"fmt"
+
+	"github.com/authzed/ktrllib/handler"
 )
 
 type SettableContext[V any] interface {
@@ -109,4 +111,15 @@ func (k *ContextHandleDefaultingKey[V]) Value(ctx context.Context) V {
 
 func (k *ContextHandleDefaultingKey[V]) MustValue(ctx context.Context) V {
 	return k.Value(ctx)
+}
+
+// HandleBuilder returns a HandleBuilder that calls WithHandle before calling
+// the next handler in the chain.
+func (k *ContextHandleDefaultingKey[V]) HandleBuilder(id handler.Key) handler.Builder {
+	return func(next ...handler.Handler) handler.Handler {
+		return handler.NewHandlerFromFunc(func(ctx context.Context) {
+			ctx = k.WithHandle(ctx)
+			handler.Handlers(next).MustOne().Handle(ctx)
+		}, id)
+	}
 }

@@ -8,6 +8,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+
+	"github.com/authzed/ktrllib/handler"
 )
 
 const ConditionTypePaused = "Paused"
@@ -34,14 +36,14 @@ type PauseHandler[K HasStatusConditions] struct {
 	PausedLabelKey string
 	Object         K
 	PatchStatus    func(ctx context.Context, patch K) error
-	Next           Handler
+	Next           handler.ContextHandler
 }
 
 func NewPauseHandler[K HasStatusConditions](ctrls ControlDoneRequeue,
 	pausedLabelKey string,
 	object K,
 	patchStatus func(ctx context.Context, patch K) error,
-	next Handler,
+	next handler.ContextHandler,
 ) *PauseHandler[K] {
 	return &PauseHandler[K]{
 		ControlDoneRequeue: ctrls,
