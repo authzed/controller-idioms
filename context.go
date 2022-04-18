@@ -15,6 +15,10 @@ type SettableContext[V any] interface {
 // specific type of value V. It mimics the context.Context interface
 type ContextKey[V comparable] struct{}
 
+func NewContextKey[V comparable]() *ContextKey[V] {
+	return &ContextKey[V]{}
+}
+
 func (k *ContextKey[V]) WithValue(ctx context.Context, val V) context.Context {
 	return context.WithValue(ctx, k, val)
 }
