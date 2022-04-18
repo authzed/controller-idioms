@@ -12,3 +12,9 @@ func Chain(children ...handler.Builder) handler.Builder {
 		return next
 	}
 }
+
+var _ BuilderComposer = Chain
+
+func ChainWithMiddleware(middleware ...Middleware) BuilderComposer {
+	return WithMiddleware(Chain, middleware...)
+}

@@ -5,16 +5,18 @@ import (
 	"fmt"
 )
 
-// This package contains the basic Handler units used to compose reconiciliation
+// This package contains the basic Handler units used to compose reconciliation
 // loops for a controller.
 //
 // You write functions or types that implement the ContextHandler interface, and
 // then compose them via Handlers and Builders.
 //
-// Builders are used for chaining handler construction together, and Handlers
+// Builders are used for chaining Handler construction together, and Handlers
 // are the things that actually process requests. It can be useful to go back
 // and forth between Builders and Handlers (to wrap startup behavior or runtime
-// behavior respectively)
+// behavior respectively), so each type has methods to convert between them.
+//
+// See other files for helpers to compose or wrap handlers and builders.
 
 // ContextHandler is the interface for a "chunk" of reconciliation. It either
 // returns, often by adjusting the current key's place in the queue (i.e. via
@@ -115,19 +117,8 @@ type Builder func(next ...Handler) Handler
 
 // Handler returns the "natural" Handler from the Builder by passing an empty
 // handler to the builder.
-func (b Builder) Handler(id Key) Handler {
-	return b(NoopHandler).WithID(id)
-}
-
-// NewNextBuilder returns a Builder that calls the input Handler h, followed by
-// the single Handler passed into the Builder.
-func NewNextBuilder(h ContextHandler) Builder {
-	return func(next ...Handler) Handler {
-		return NewHandler(ContextHandlerFunc(func(ctx context.Context) {
-			h.Handle(ctx)
-			Handlers(next).MustOne().Handle(ctx)
-		}), NextKey)
-	}
+func (f Builder) Handler(id Key) Handler {
+	return f(NoopHandler).WithID(id)
 }
 
 // NoopHandler is a handler that does nothing
