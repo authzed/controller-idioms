@@ -5,7 +5,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 	"github.com/davecgh/go-spew/spew"
 	"k8s.io/apimachinery/pkg/util/rand"
 )
