@@ -78,11 +78,13 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 		}
 	}
 
-	// delete extra objects
-	for _, o := range extraObjs {
-		if err := e.deleteObject(ctx, o.GetName()); err != nil {
-			e.RequeueErr(err)
-			return
+	if len(matchingObjs) == 1 {
+		// delete extra objects
+		for _, o := range extraObjs {
+			if err := e.deleteObject(ctx, o.GetName()); err != nil {
+				e.RequeueErr(err)
+				return
+			}
 		}
 	}
 
