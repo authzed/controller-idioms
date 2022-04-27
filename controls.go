@@ -6,25 +6,53 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
+//counterfeiter:generate -o ./fake . ControlDone
 type ControlDone interface {
 	Done()
 }
 
+//counterfeiter:generate -o ./fake . ControlRequeueAfter
 type ControlRequeueAfter interface {
 	RequeueAfter(duration time.Duration)
 }
 
+//counterfeiter:generate -o ./fake . ControlRequeue
 type ControlRequeue interface {
 	Requeue()
 }
 
+//counterfeiter:generate -o ./fake . ControlRequeueErr
 type ControlRequeueErr interface {
+	ControlRequeue
 	RequeueErr(err error)
 }
 
+//counterfeiter:generate -o ./fake . ControlDoneRequeue
 type ControlDoneRequeue interface {
-	Done()
-	Requeue()
+	ControlDone
+	ControlRequeue
+}
+
+//counterfeiter:generate -o ./fake . ControlDoneRequeueAfter
+type ControlDoneRequeueAfter interface {
+	ControlDone
+	ControlRequeueAfter
+}
+
+//counterfeiter:generate -o ./fake . ControlAll
+type ControlDoneRequeueErr interface {
+	ControlDone
+	ControlRequeueErr
+}
+
+//counterfeiter:generate -o ./fake . ControlAll
+type ControlAll interface {
+	ControlDone
+	ControlRequeue
+	ControlRequeueAfter
+	ControlRequeueErr
 }
 
 type HandlerControls struct {

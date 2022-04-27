@@ -16,6 +16,7 @@ const ConditionTypePaused = "Paused"
 
 // HasStatusConditions is used for pausing
 type HasStatusConditions interface {
+	comparable
 	metav1.Object
 	FindStatusCondition(conditionType string) *metav1.Condition
 	SetStatusCondition(metav1.Condition)
@@ -80,23 +81,23 @@ func (p *PauseHandler[K]) Handle(ctx context.Context) {
 // been resolved (i.e. an external resource is behaving poorly).
 type SelfPauseHandler[K HasStatusConditions] struct {
 	HandlerControls
+	CtxKey         *ContextDefaultingKey[K]
 	PausedLabelKey string
 	OwnerUID       types.UID
-	Object         K
 	Patch          func(ctx context.Context, patch K) error
 	PatchStatus    func(ctx context.Context, patch K) error
 }
 
 func NewSelfPauseHandler[K HasStatusConditions](ctrls HandlerControls,
 	pausedLabelKey string,
-	object K,
+	contextKey *ContextDefaultingKey[K],
 	ownerUID types.UID,
 	patch, patchStatus func(ctx context.Context, patch K) error,
 ) *SelfPauseHandler[K] {
 	return &SelfPauseHandler[K]{
+		CtxKey:          contextKey,
 		HandlerControls: ctrls,
 		PausedLabelKey:  pausedLabelKey,
-		Object:          object,
 		OwnerUID:        ownerUID,
 		Patch:           patch,
 		PatchStatus:     patchStatus,
@@ -104,18 +105,19 @@ func NewSelfPauseHandler[K HasStatusConditions](ctrls HandlerControls,
 }
 
 func (p *SelfPauseHandler[K]) Handle(ctx context.Context) {
-	p.Object.SetStatusCondition(NewSelfPausedCondition(p.PausedLabelKey))
-	if err := p.PatchStatus(ctx, p.Object); err != nil {
+	object := p.CtxKey.MustValue(ctx)
+	object.SetStatusCondition(NewSelfPausedCondition(p.PausedLabelKey))
+	if err := p.PatchStatus(ctx, object); err != nil {
 		p.RequeueErr(err)
 		return
 	}
-	labels := p.Object.GetLabels()
+	labels := object.GetLabels()
 	if labels == nil {
 		labels = make(map[string]string)
 	}
 	labels[p.PausedLabelKey] = string(p.OwnerUID)
-	p.Object.SetLabels(labels)
-	if err := p.Patch(ctx, p.Object); err != nil {
+	object.SetLabels(labels)
+	if err := p.Patch(ctx, object); err != nil {
 		utilruntime.HandleError(err)
 		p.Requeue()
 		return
