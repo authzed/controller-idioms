@@ -41,7 +41,7 @@ type ControlDoneRequeueAfter interface {
 	ControlRequeueAfter
 }
 
-//counterfeiter:generate -o ./fake . ControlAll
+//counterfeiter:generate -o ./fake . ControlDoneRequeueErr
 type ControlDoneRequeueErr interface {
 	ControlDone
 	ControlRequeueErr
