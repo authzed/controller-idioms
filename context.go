@@ -98,7 +98,7 @@ func (k *ContextHandleDefaultingKey[V]) WithValue(ctx context.Context, val V) co
 		handle.value = val
 		return ctx
 	}
-	return context.WithValue(ctx, k, ContextHandle[V]{value: val})
+	return context.WithValue(ctx, k, &ContextHandle[V]{value: val})
 }
 
 func (k *ContextHandleDefaultingKey[V]) WithHandle(ctx context.Context) context.Context {
