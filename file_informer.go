@@ -1,6 +1,7 @@
 package libctrl
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -28,7 +29,9 @@ type FileInformerFactory struct {
 	startedInformers map[schema.GroupVersionResource]bool
 }
 
-func NewFileInformerFactory() (dynamicinformer.DynamicSharedInformerFactory, error) {
+var _ dynamicinformer.DynamicSharedInformerFactory = &FileInformerFactory{}
+
+func NewFileInformerFactory() (*FileInformerFactory, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -102,11 +105,13 @@ type FileInformer struct {
 	informer cache.SharedIndexInformer
 }
 
+var _ informers.GenericInformer = &FileInformer{}
+
 func NewFileInformer(watcher *fsnotify.Watcher, gvr schema.GroupVersionResource) (*FileInformer, error) {
 	return &FileInformer{
 		fileName: gvr.Resource,
 		watcher:  watcher,
-		informer: NewFileSharedIndexInformer(gvr.Resource, watcher),
+		informer: NewFileSharedIndexInformer(gvr.Resource, watcher, 15*time.Minute),
 	}, nil
 }
 
@@ -130,11 +135,16 @@ type FileSharedIndexInformer struct {
 	handlers                        []cache.ResourceEventHandler
 }
 
-func NewFileSharedIndexInformer(fileName string, watcher *fsnotify.Watcher) *FileSharedIndexInformer {
+var _ cache.SharedIndexInformer = &FileSharedIndexInformer{}
+
+// NewFileSharedIndexInformer creates a new informer watching the file
+// Note that currently all event handlers share the default resync period.
+func NewFileSharedIndexInformer(fileName string, watcher *fsnotify.Watcher, defaultEventHandlerResyncPeriod time.Duration) *FileSharedIndexInformer {
 	return &FileSharedIndexInformer{
-		fileName: fileName,
-		watcher:  watcher,
-		handlers: []cache.ResourceEventHandler{},
+		fileName:                        fileName,
+		watcher:                         watcher,
+		handlers:                        []cache.ResourceEventHandler{},
+		defaultEventHandlerResyncPeriod: defaultEventHandlerResyncPeriod,
 	}
 }
 
@@ -151,7 +161,7 @@ func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.
 	f.Lock()
 	defer f.Unlock()
 	f.handlers = append(f.handlers, handler)
-	// TODO: resync
+	// TODO: non-default resync period
 }
 
 func (f *FileSharedIndexInformer) GetStore() cache.Store {
@@ -196,8 +206,19 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 				utilruntime.HandleError(f.watcher.Remove(fileName))
 				klog.V(4).Infof("stopped watching %q", fileName)
 			}()
+			ctx, cancel := context.WithTimeout(context.Background(), f.defaultEventHandlerResyncPeriod)
+			defer cancel()
 			for {
 				select {
+				case <-ctx.Done():
+					klog.V(4).Infof("resyncing file %s after %s", fileName, f.defaultEventHandlerResyncPeriod.String())
+					f.RLock()
+					for _, h := range f.handlers {
+						h.OnUpdate(fileName, fileName)
+					}
+					f.RUnlock()
+					cancel()
+					ctx, cancel = context.WithTimeout(context.Background(), f.defaultEventHandlerResyncPeriod)
 				case event, ok := <-f.watcher.Events:
 					if !ok {
 						return
