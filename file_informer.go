@@ -22,7 +22,6 @@ var FileGroupVersion = schema.GroupVersion{
 
 type FileInformerFactory struct {
 	sync.Mutex
-	watcher   *fsnotify.Watcher
 	informers map[schema.GroupVersionResource]informers.GenericInformer
 	// startedInformers is used for tracking which informers have been started.
 	// This allows Start() to be called multiple times safely.
@@ -32,12 +31,7 @@ type FileInformerFactory struct {
 var _ dynamicinformer.DynamicSharedInformerFactory = &FileInformerFactory{}
 
 func NewFileInformerFactory() (*FileInformerFactory, error) {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, err
-	}
 	return &FileInformerFactory{
-		watcher:          watcher,
 		informers:        make(map[schema.GroupVersionResource]informers.GenericInformer),
 		startedInformers: make(map[schema.GroupVersionResource]bool),
 	}, nil
@@ -53,10 +47,6 @@ func (f *FileInformerFactory) Start(stopCh <-chan struct{}) {
 			f.startedInformers[informerType] = true
 		}
 	}
-	go func() {
-		<-stopCh
-		utilruntime.HandleError(f.watcher.Close())
-	}()
 }
 
 func (f *FileInformerFactory) ForResource(gvr schema.GroupVersionResource) informers.GenericInformer {
@@ -69,7 +59,11 @@ func (f *FileInformerFactory) ForResource(gvr schema.GroupVersionResource) infor
 		return informer
 	}
 
-	informer, err := NewFileInformer(f.watcher, gvr)
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		panic(err)
+	}
+	informer, err = NewFileInformer(watcher, gvr)
 	if err != nil {
 		panic(err)
 	}
@@ -204,6 +198,7 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 				f.Lock()
 				defer f.Unlock()
 				utilruntime.HandleError(f.watcher.Remove(fileName))
+				utilruntime.HandleError(f.watcher.Close())
 				klog.V(4).Infof("stopped watching %q", fileName)
 			}()
 			ctx, cancel := context.WithTimeout(context.Background(), f.defaultEventHandlerResyncPeriod)
