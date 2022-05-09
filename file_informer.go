@@ -92,7 +92,7 @@ func (f *FileInformerFactory) WaitForCacheSync(stopCh <-chan struct{}) map[schem
 		return infs
 	}()
 
-	res := map[schema.GroupVersionResource]bool{}
+	res := make(map[schema.GroupVersionResource]bool, len(infs))
 	for informType, informer := range infs {
 		res[informType] = cache.WaitForCacheSync(stopCh, informer.HasSynced)
 	}
@@ -207,7 +207,6 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 				klog.V(4).Infof("stopped watching %q", fileName)
 			}()
 			ctx, cancel := context.WithTimeout(context.Background(), f.defaultEventHandlerResyncPeriod)
-			defer cancel()
 			for {
 				select {
 				case <-ctx.Done():
@@ -221,6 +220,7 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 					ctx, cancel = context.WithTimeout(context.Background(), f.defaultEventHandlerResyncPeriod)
 				case event, ok := <-f.watcher.Events:
 					if !ok {
+						cancel()
 						return
 					}
 					klog.V(8).Infof("filewatcher got event %s for %q", event.String(), event.Name)
@@ -256,10 +256,12 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 					}
 				case err, ok := <-f.watcher.Errors:
 					if !ok {
+						cancel()
 						return
 					}
 					utilruntime.HandleError(fmt.Errorf("error watching file: %w", err))
 				case <-stopCh:
+					cancel()
 					return
 				}
 			}
