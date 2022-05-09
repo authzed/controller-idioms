@@ -8,7 +8,7 @@ import (
 	"github.com/authzed/ktrllib"
 )
 
-type FakeControlAll struct {
+type FakeControlRequeueAPIErr struct {
 	DoneStub        func()
 	doneMutex       sync.RWMutex
 	doneArgsForCall []struct {
@@ -27,16 +27,11 @@ type FakeControlAll struct {
 	requeueAfterArgsForCall []struct {
 		arg1 time.Duration
 	}
-	RequeueErrStub        func(error)
-	requeueErrMutex       sync.RWMutex
-	requeueErrArgsForCall []struct {
-		arg1 error
-	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeControlAll) Done() {
+func (fake *FakeControlRequeueAPIErr) Done() {
 	fake.doneMutex.Lock()
 	fake.doneArgsForCall = append(fake.doneArgsForCall, struct {
 	}{})
@@ -48,19 +43,19 @@ func (fake *FakeControlAll) Done() {
 	}
 }
 
-func (fake *FakeControlAll) DoneCallCount() int {
+func (fake *FakeControlRequeueAPIErr) DoneCallCount() int {
 	fake.doneMutex.RLock()
 	defer fake.doneMutex.RUnlock()
 	return len(fake.doneArgsForCall)
 }
 
-func (fake *FakeControlAll) DoneCalls(stub func()) {
+func (fake *FakeControlRequeueAPIErr) DoneCalls(stub func()) {
 	fake.doneMutex.Lock()
 	defer fake.doneMutex.Unlock()
 	fake.DoneStub = stub
 }
 
-func (fake *FakeControlAll) Requeue() {
+func (fake *FakeControlRequeueAPIErr) Requeue() {
 	fake.requeueMutex.Lock()
 	fake.requeueArgsForCall = append(fake.requeueArgsForCall, struct {
 	}{})
@@ -72,19 +67,19 @@ func (fake *FakeControlAll) Requeue() {
 	}
 }
 
-func (fake *FakeControlAll) RequeueCallCount() int {
+func (fake *FakeControlRequeueAPIErr) RequeueCallCount() int {
 	fake.requeueMutex.RLock()
 	defer fake.requeueMutex.RUnlock()
 	return len(fake.requeueArgsForCall)
 }
 
-func (fake *FakeControlAll) RequeueCalls(stub func()) {
+func (fake *FakeControlRequeueAPIErr) RequeueCalls(stub func()) {
 	fake.requeueMutex.Lock()
 	defer fake.requeueMutex.Unlock()
 	fake.RequeueStub = stub
 }
 
-func (fake *FakeControlAll) RequeueAPIErr(arg1 error) {
+func (fake *FakeControlRequeueAPIErr) RequeueAPIErr(arg1 error) {
 	fake.requeueAPIErrMutex.Lock()
 	fake.requeueAPIErrArgsForCall = append(fake.requeueAPIErrArgsForCall, struct {
 		arg1 error
@@ -97,26 +92,26 @@ func (fake *FakeControlAll) RequeueAPIErr(arg1 error) {
 	}
 }
 
-func (fake *FakeControlAll) RequeueAPIErrCallCount() int {
+func (fake *FakeControlRequeueAPIErr) RequeueAPIErrCallCount() int {
 	fake.requeueAPIErrMutex.RLock()
 	defer fake.requeueAPIErrMutex.RUnlock()
 	return len(fake.requeueAPIErrArgsForCall)
 }
 
-func (fake *FakeControlAll) RequeueAPIErrCalls(stub func(error)) {
+func (fake *FakeControlRequeueAPIErr) RequeueAPIErrCalls(stub func(error)) {
 	fake.requeueAPIErrMutex.Lock()
 	defer fake.requeueAPIErrMutex.Unlock()
 	fake.RequeueAPIErrStub = stub
 }
 
-func (fake *FakeControlAll) RequeueAPIErrArgsForCall(i int) error {
+func (fake *FakeControlRequeueAPIErr) RequeueAPIErrArgsForCall(i int) error {
 	fake.requeueAPIErrMutex.RLock()
 	defer fake.requeueAPIErrMutex.RUnlock()
 	argsForCall := fake.requeueAPIErrArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeControlAll) RequeueAfter(arg1 time.Duration) {
+func (fake *FakeControlRequeueAPIErr) RequeueAfter(arg1 time.Duration) {
 	fake.requeueAfterMutex.Lock()
 	fake.requeueAfterArgsForCall = append(fake.requeueAfterArgsForCall, struct {
 		arg1 time.Duration
@@ -129,58 +124,26 @@ func (fake *FakeControlAll) RequeueAfter(arg1 time.Duration) {
 	}
 }
 
-func (fake *FakeControlAll) RequeueAfterCallCount() int {
+func (fake *FakeControlRequeueAPIErr) RequeueAfterCallCount() int {
 	fake.requeueAfterMutex.RLock()
 	defer fake.requeueAfterMutex.RUnlock()
 	return len(fake.requeueAfterArgsForCall)
 }
 
-func (fake *FakeControlAll) RequeueAfterCalls(stub func(time.Duration)) {
+func (fake *FakeControlRequeueAPIErr) RequeueAfterCalls(stub func(time.Duration)) {
 	fake.requeueAfterMutex.Lock()
 	defer fake.requeueAfterMutex.Unlock()
 	fake.RequeueAfterStub = stub
 }
 
-func (fake *FakeControlAll) RequeueAfterArgsForCall(i int) time.Duration {
+func (fake *FakeControlRequeueAPIErr) RequeueAfterArgsForCall(i int) time.Duration {
 	fake.requeueAfterMutex.RLock()
 	defer fake.requeueAfterMutex.RUnlock()
 	argsForCall := fake.requeueAfterArgsForCall[i]
 	return argsForCall.arg1
 }
 
-func (fake *FakeControlAll) RequeueErr(arg1 error) {
-	fake.requeueErrMutex.Lock()
-	fake.requeueErrArgsForCall = append(fake.requeueErrArgsForCall, struct {
-		arg1 error
-	}{arg1})
-	stub := fake.RequeueErrStub
-	fake.recordInvocation("RequeueErr", []interface{}{arg1})
-	fake.requeueErrMutex.Unlock()
-	if stub != nil {
-		fake.RequeueErrStub(arg1)
-	}
-}
-
-func (fake *FakeControlAll) RequeueErrCallCount() int {
-	fake.requeueErrMutex.RLock()
-	defer fake.requeueErrMutex.RUnlock()
-	return len(fake.requeueErrArgsForCall)
-}
-
-func (fake *FakeControlAll) RequeueErrCalls(stub func(error)) {
-	fake.requeueErrMutex.Lock()
-	defer fake.requeueErrMutex.Unlock()
-	fake.RequeueErrStub = stub
-}
-
-func (fake *FakeControlAll) RequeueErrArgsForCall(i int) error {
-	fake.requeueErrMutex.RLock()
-	defer fake.requeueErrMutex.RUnlock()
-	argsForCall := fake.requeueErrArgsForCall[i]
-	return argsForCall.arg1
-}
-
-func (fake *FakeControlAll) Invocations() map[string][][]interface{} {
+func (fake *FakeControlRequeueAPIErr) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
 	fake.doneMutex.RLock()
@@ -191,8 +154,6 @@ func (fake *FakeControlAll) Invocations() map[string][][]interface{} {
 	defer fake.requeueAPIErrMutex.RUnlock()
 	fake.requeueAfterMutex.RLock()
 	defer fake.requeueAfterMutex.RUnlock()
-	fake.requeueErrMutex.RLock()
-	defer fake.requeueErrMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
@@ -200,7 +161,7 @@ func (fake *FakeControlAll) Invocations() map[string][][]interface{} {
 	return copiedInvocations
 }
 
-func (fake *FakeControlAll) recordInvocation(key string, args []interface{}) {
+func (fake *FakeControlRequeueAPIErr) recordInvocation(key string, args []interface{}) {
 	fake.invocationsMutex.Lock()
 	defer fake.invocationsMutex.Unlock()
 	if fake.invocations == nil {
@@ -212,4 +173,4 @@ func (fake *FakeControlAll) recordInvocation(key string, args []interface{}) {
 	fake.invocations[key] = append(fake.invocations[key], args)
 }
 
-var _ libctrl.ControlAll = new(FakeControlAll)
+var _ libctrl.ControlRequeueAPIErr = new(FakeControlRequeueAPIErr)

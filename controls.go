@@ -29,6 +29,14 @@ type ControlRequeueErr interface {
 	RequeueErr(err error)
 }
 
+//counterfeiter:generate -o ./fake . ControlRequeueAPIErr
+type ControlRequeueAPIErr interface {
+	ControlDone
+	ControlRequeue
+	ControlRequeueAfter
+	RequeueAPIErr(err error)
+}
+
 //counterfeiter:generate -o ./fake . ControlDoneRequeue
 type ControlDoneRequeue interface {
 	ControlDone
@@ -53,6 +61,7 @@ type ControlAll interface {
 	ControlRequeue
 	ControlRequeueAfter
 	ControlRequeueErr
+	ControlRequeueAPIErr
 }
 
 type HandlerControls struct {
@@ -73,10 +82,20 @@ func (c HandlerControls) Requeue() {
 	c.requeue()
 }
 
-// TODO: variant that understands kube api return codes
 func (c HandlerControls) RequeueErr(err error) {
 	utilruntime.HandleError(err)
 	c.requeue()
+}
+
+func (c HandlerControls) RequeueAPIErr(err error) {
+	retry, after := ShouldRetry(err)
+	if retry && after > 0 {
+		c.RequeueAfter(after)
+	}
+	if retry {
+		c.Requeue()
+	}
+	c.Done()
 }
 
 type ControlOpt func(*HandlerControls)
