@@ -229,6 +229,8 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 						for _, h := range f.handlers {
 							h.OnDelete(fileName)
 						}
+						// attempt to re-add the watch
+						utilruntime.HandleError(f.watcher.Add(event.Name))
 						f.RUnlock()
 					}
 				case err, ok := <-f.watcher.Errors:
