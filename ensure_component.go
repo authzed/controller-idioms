@@ -87,6 +87,4 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 			}
 		}
 	}
-
-	return
 }

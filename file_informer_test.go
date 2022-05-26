@@ -60,7 +60,7 @@ func TestFileInformer(t *testing.T) {
 
 	// expect an OnUpdate when permission is changed
 	eventHandlers.On("OnUpdate", file.Name(), file.Name()).Return()
-	require.NoError(t, file.Chmod(770))
+	require.NoError(t, file.Chmod(0o770))
 
 	require.Eventually(t, func() bool {
 		eventHandlers.Lock()
