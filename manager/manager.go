@@ -54,6 +54,7 @@ func (m *Manager) StartControllers(ctx context.Context, controllers ...Controlle
 	m.once.Do(func() {
 		// start controllers
 		for _, c := range controllers {
+			c := c
 			m.healthzHandler.AddHealthChecker(controllerhealthz.NamedHealthChecker(c.Name(), c.HealthChecker()))
 			errG.Go(func() error {
 				c.Start(ctx, runtime.GOMAXPROCS(0))
