@@ -88,6 +88,7 @@ func (c HandlerControls) RequeueErr(err error) {
 }
 
 func (c HandlerControls) RequeueAPIErr(err error) {
+	utilruntime.HandleError(err)
 	retry, after := ShouldRetry(err)
 	if retry && after > 0 {
 		c.RequeueAfter(after)
