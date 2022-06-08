@@ -33,25 +33,25 @@ func IsPaused(object metav1.Object, pausedLabelKey string) bool {
 }
 
 type PauseHandler[K HasStatusConditions] struct {
-	ControlDoneRequeue
+	ControlDoneRequeueErr
 	PausedLabelKey string
 	Object         K
 	PatchStatus    func(ctx context.Context, patch K) error
 	Next           handler.ContextHandler
 }
 
-func NewPauseHandler[K HasStatusConditions](ctrls ControlDoneRequeue,
+func NewPauseHandler[K HasStatusConditions](ctrls ControlDoneRequeueErr,
 	pausedLabelKey string,
 	object K,
 	patchStatus func(ctx context.Context, patch K) error,
 	next handler.ContextHandler,
 ) *PauseHandler[K] {
 	return &PauseHandler[K]{
-		ControlDoneRequeue: ctrls,
-		PausedLabelKey:     pausedLabelKey,
-		Object:             object,
-		PatchStatus:        patchStatus,
-		Next:               next,
+		ControlDoneRequeueErr: ctrls,
+		PausedLabelKey:        pausedLabelKey,
+		Object:                object,
+		PatchStatus:           patchStatus,
+		Next:                  next,
 	}
 }
 
@@ -61,8 +61,9 @@ func (p *PauseHandler[K]) pause(ctx context.Context) {
 		return
 	}
 	p.Object.SetStatusCondition(NewPausedCondition(p.PausedLabelKey))
+	p.Object.SetManagedFields(nil)
 	if err := p.PatchStatus(ctx, p.Object); err != nil {
-		p.Requeue()
+		p.RequeueErr(err)
 		return
 	}
 	p.Done()
