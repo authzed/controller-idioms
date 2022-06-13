@@ -20,6 +20,7 @@ type HasStatusConditions interface {
 	metav1.Object
 	FindStatusCondition(conditionType string) *metav1.Condition
 	SetStatusCondition(metav1.Condition)
+	GetStatusConditions() []metav1.Condition
 }
 
 func IsPaused(object metav1.Object, pausedLabelKey string) bool {
