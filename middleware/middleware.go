@@ -30,10 +30,10 @@ func SyncIDMiddleware(in handler.Handler) handler.Handler {
 	}, in.ID())
 }
 
-func KlogMiddleware(ref klog.ObjectRef) libctrl.HandlerMiddleware {
+func KlogMiddleware(controllerName string, ref klog.ObjectRef) libctrl.HandlerMiddleware {
 	return func(in handler.Handler) handler.Handler {
 		return handler.NewHandlerFromFunc(func(ctx context.Context) {
-			klog.V(4).InfoS("entering handler", "syncID", CtxSyncID.MustValue(ctx), "object", ref, "handler", in.ID())
+			klog.V(4).InfoS("entering handler", "controller", controllerName, "syncID", CtxSyncID.MustValue(ctx), "object", ref, "handler", in.ID())
 			in.Handle(ctx)
 		}, in.ID())
 	}
