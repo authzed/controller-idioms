@@ -1,8 +1,10 @@
 package metrics
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/component-base/metrics"
 
@@ -19,6 +21,41 @@ type ConditionStatusCollector[K libctrl.HasStatusConditions] struct {
 	ObjectTimeInCondition *metrics.Desc
 	CollectorTime         *metrics.Desc
 	CollectorErrors       *metrics.Desc
+}
+
+func NewConditionStatusCollector[K libctrl.HasStatusConditions](namespace string, subsystem string, resourceName string) *ConditionStatusCollector[K] {
+	return &ConditionStatusCollector[K]{
+		ObjectCount: metrics.NewDesc(
+			prometheus.BuildFQName(namespace, subsystem, "count"),
+			fmt.Sprintf("Gauge showing the number of %s managed by this operator", resourceName),
+			nil, nil, metrics.ALPHA, "",
+		),
+		ObjectConditionCount: metrics.NewDesc(
+			prometheus.BuildFQName(namespace, subsystem, "condition_count"),
+			fmt.Sprintf("Gauge showing the number of %s with each type of condition", resourceName),
+			[]string{
+				"condition",
+			}, nil, metrics.ALPHA, "",
+		),
+		ObjectTimeInCondition: metrics.NewDesc(
+			prometheus.BuildFQName(namespace, subsystem, "condition_time_seconds"),
+			fmt.Sprintf("Gauge showing the amount of time %s have spent in the current condition", resourceName),
+			[]string{
+				"condition",
+				"object",
+			}, nil, metrics.ALPHA, "",
+		),
+		CollectorTime: metrics.NewDesc(
+			prometheus.BuildFQName(namespace, subsystem+"_status_collector", "execution_seconds"),
+			fmt.Sprintf("Amount of time spent on the last run of the %s status collector", resourceName),
+			nil, nil, metrics.ALPHA, "",
+		),
+		CollectorErrors: metrics.NewDesc(
+			prometheus.BuildFQName(namespace, subsystem+"_status_collector", "errors_count"),
+			fmt.Sprintf("Number of errors encountered on the last run of the %s status collector", resourceName),
+			nil, nil, metrics.ALPHA, "",
+		),
+	}
 }
 
 func (c *ConditionStatusCollector[K]) AddListerBuilder(lb func() ([]K, error)) {
@@ -54,11 +91,11 @@ func (c *ConditionStatusCollector[K]) CollectWithStability(ch chan<- metrics.Met
 
 		ch <- metrics.NewLazyConstMetric(c.ObjectCount, metrics.GaugeValue, float64(len(objs)))
 
-		clustersWithCondition := map[string]uint16{}
+		objectsWithCondition := map[string]uint16{}
 		for _, o := range objs {
-			clusterName := types.NamespacedName{Name: o.GetName(), Namespace: o.GetNamespace()}.String()
+			objectName := types.NamespacedName{Name: o.GetName(), Namespace: o.GetNamespace()}.String()
 			for _, condition := range o.GetStatusConditions() {
-				clustersWithCondition[condition.Type]++
+				objectsWithCondition[condition.Type]++
 
 				timeInCondition := collectTime.Sub(condition.LastTransitionTime.Time)
 
@@ -67,12 +104,12 @@ func (c *ConditionStatusCollector[K]) CollectWithStability(ch chan<- metrics.Met
 					metrics.GaugeValue,
 					timeInCondition.Seconds(),
 					condition.Type,
-					clusterName,
+					objectName,
 				)
 			}
 		}
 
-		for conditionType, count := range clustersWithCondition {
+		for conditionType, count := range objectsWithCondition {
 			ch <- metrics.NewLazyConstMetric(c.ObjectConditionCount, metrics.GaugeValue, float64(count), conditionType)
 		}
 	}
