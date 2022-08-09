@@ -13,9 +13,9 @@ type SettableContext[V any] interface {
 
 // ContextKey is a type that is used as a key in a context.Context for a
 // specific type of value V. It mimics the context.Context interface
-type ContextKey[V comparable] struct{}
+type ContextKey[V any] struct{}
 
-func NewContextKey[V comparable]() *ContextKey[V] {
+func NewContextKey[V any]() *ContextKey[V] {
 	return &ContextKey[V]{}
 }
 

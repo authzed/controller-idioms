@@ -1,6 +1,7 @@
 package libctrl
 
 import (
+	"context"
 	"time"
 
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -8,86 +9,69 @@ import (
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
-//counterfeiter:generate -o ./fake . ControlDone
-type ControlDone interface {
-	Done()
+type HandlerControlContext struct {
+	*ContextKey[ControlAll]
 }
 
-//counterfeiter:generate -o ./fake . ControlRequeueAfter
-type ControlRequeueAfter interface {
-	RequeueAfter(duration time.Duration)
+func (h HandlerControlContext) Done(ctx context.Context) {
+	h.MustValue(ctx).Done()
 }
 
-//counterfeiter:generate -o ./fake . ControlRequeue
-type ControlRequeue interface {
-	Requeue()
+func (h HandlerControlContext) RequeueAfter(ctx context.Context, duration time.Duration) {
+	h.MustValue(ctx).RequeueAfter(duration)
 }
 
-//counterfeiter:generate -o ./fake . ControlRequeueErr
-type ControlRequeueErr interface {
-	ControlRequeue
-	RequeueErr(err error)
+func (h HandlerControlContext) Requeue(ctx context.Context) {
+	h.MustValue(ctx).Requeue()
 }
 
-//counterfeiter:generate -o ./fake . ControlRequeueAPIErr
-type ControlRequeueAPIErr interface {
-	ControlDone
-	ControlRequeue
-	ControlRequeueAfter
-	RequeueAPIErr(err error)
+func (h HandlerControlContext) RequeueErr(ctx context.Context, err error) {
+	h.MustValue(ctx).RequeueErr(err)
 }
 
-//counterfeiter:generate -o ./fake . ControlDoneRequeue
-type ControlDoneRequeue interface {
-	ControlDone
-	ControlRequeue
+func (h HandlerControlContext) RequeueAPIErr(ctx context.Context, err error) {
+	h.MustValue(ctx).RequeueAPIErr(err)
 }
 
-//counterfeiter:generate -o ./fake . ControlDoneRequeueAfter
-type ControlDoneRequeueAfter interface {
-	ControlDone
-	ControlRequeueAfter
-}
-
-//counterfeiter:generate -o ./fake . ControlDoneRequeueErr
-type ControlDoneRequeueErr interface {
-	ControlDone
-	ControlRequeueErr
+func NewHandlerControls(done func(), requeueAfter func(time.Duration)) *HandlerControls {
+	return &HandlerControls{
+		done:         done,
+		requeueAfter: requeueAfter,
+	}
 }
 
 //counterfeiter:generate -o ./fake . ControlAll
 type ControlAll interface {
-	ControlDone
-	ControlRequeue
-	ControlRequeueAfter
-	ControlRequeueErr
-	ControlRequeueAPIErr
+	Done()
+	RequeueAfter(duration time.Duration)
+	Requeue()
+	RequeueErr(err error)
+	RequeueAPIErr(err error)
 }
 
 type HandlerControls struct {
 	done         func()
-	requeue      func()
 	requeueAfter func(duration time.Duration)
 }
 
-func (c HandlerControls) Done() {
+func (c *HandlerControls) Done() {
 	c.done()
 }
 
-func (c HandlerControls) RequeueAfter(duration time.Duration) {
+func (c *HandlerControls) RequeueAfter(duration time.Duration) {
 	c.requeueAfter(duration)
 }
 
-func (c HandlerControls) Requeue() {
-	c.requeue()
+func (c *HandlerControls) Requeue() {
+	c.requeueAfter(0)
 }
 
-func (c HandlerControls) RequeueErr(err error) {
+func (c *HandlerControls) RequeueErr(err error) {
 	utilruntime.HandleError(err)
-	c.requeue()
+	c.requeueAfter(0)
 }
 
-func (c HandlerControls) RequeueAPIErr(err error) {
+func (c *HandlerControls) RequeueAPIErr(err error) {
 	utilruntime.HandleError(err)
 	retry, after := ShouldRetry(err)
 	if retry && after > 0 {
@@ -97,43 +81,4 @@ func (c HandlerControls) RequeueAPIErr(err error) {
 		c.Requeue()
 	}
 	c.Done()
-}
-
-type ControlOpt func(*HandlerControls)
-
-func WithDone(doneFunc func()) ControlOpt {
-	return func(c *HandlerControls) {
-		c.done = doneFunc
-	}
-}
-
-func WithRequeue(requeueFunc func()) ControlOpt {
-	return func(c *HandlerControls) {
-		c.requeue = requeueFunc
-	}
-}
-
-func WithRequeueImmediate(requeueFunc func(duration time.Duration)) ControlOpt {
-	return func(c *HandlerControls) {
-		c.requeue = func() {
-			requeueFunc(0)
-		}
-	}
-}
-
-func WithRequeueAfter(requeueAfterFunc func(duration time.Duration)) ControlOpt {
-	return func(c *HandlerControls) {
-		c.requeueAfter = requeueAfterFunc
-		c.requeue = func() {
-			requeueAfterFunc(0)
-		}
-	}
-}
-
-func HandlerControlsWith(opts ...ControlOpt) HandlerControls {
-	ctrls := HandlerControls{}
-	for _, o := range opts {
-		o(&ctrls)
-	}
-	return ctrls
 }
