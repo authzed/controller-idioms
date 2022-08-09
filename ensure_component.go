@@ -16,8 +16,8 @@ type Annotator[T any] interface {
 }
 
 type EnsureComponentByHash[K metav1.Object, A Annotator[A]] struct {
-	ControlRequeueErr
 	*HashableComponent[K]
+	ctrls        *ContextKey[ControlAll]
 	nn           types.NamespacedName
 	applyObject  func(ctx context.Context, apply A) (K, error)
 	deleteObject func(ctx context.Context, name string) error
@@ -29,13 +29,13 @@ var _ handler.ContextHandler = &EnsureComponentByHash[*corev1.Service, *applycor
 func NewEnsureComponentByHash[K metav1.Object, A Annotator[A]](
 	component *HashableComponent[K],
 	owner types.NamespacedName,
-	ctrls ControlRequeueErr,
+	ctrls *ContextKey[ControlAll],
 	applyObj func(ctx context.Context, apply A) (K, error),
 	deleteObject func(ctx context.Context, name string) error,
 	newObj func(ctx context.Context) A,
 ) *EnsureComponentByHash[K, A] {
 	return &EnsureComponentByHash[K, A]{
-		ControlRequeueErr: ctrls,
+		ctrls:             ctrls,
 		HashableComponent: component,
 		nn:                owner,
 		applyObject:       applyObj,
@@ -50,7 +50,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 	newObj := e.newObj(ctx)
 	hash, err := e.Hash(newObj)
 	if err != nil {
-		e.RequeueErr(err)
+		e.ctrls.MustValue(ctx).RequeueErr(err)
 		return
 	}
 	newObj = newObj.WithAnnotations(map[string]string{e.HashAnnotationKey: hash})
@@ -73,7 +73,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 		// apply if no matching object in cluster
 		_, err = e.applyObject(ctx, newObj)
 		if err != nil {
-			e.RequeueErr(err)
+			e.ctrls.MustValue(ctx).RequeueErr(err)
 			return
 		}
 	}
@@ -82,7 +82,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 		// delete extra objects
 		for _, o := range extraObjs {
 			if err := e.deleteObject(ctx, o.GetName()); err != nil {
-				e.RequeueErr(err)
+				e.ctrls.MustValue(ctx).RequeueErr(err)
 				return
 			}
 		}
