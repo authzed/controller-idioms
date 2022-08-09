@@ -19,7 +19,7 @@ const (
 
 // CRD installs the CRDs in the filesystem into the kube cluster configured by the rest config.
 func CRD(restConfig *rest.Config, crdFS fs.ReadDirFS, dir string) error {
-	var crds []*v1.CustomResourceDefinition
+	crds := make([]*v1.CustomResourceDefinition, 0)
 
 	crdFiles, err := crdFS.ReadDir(dir)
 	if err != nil {

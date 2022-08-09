@@ -9,15 +9,15 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-type TypedLister[K runtime.Object] struct {
+type Lister[K runtime.Object] struct {
 	lister cache.GenericLister
 }
 
-func NewTypedLister[K runtime.Object](lister cache.GenericLister) *TypedLister[K] {
-	return &TypedLister[K]{lister: lister}
+func NewLister[K runtime.Object](lister cache.GenericLister) *Lister[K] {
+	return &Lister[K]{lister: lister}
 }
 
-func (t TypedLister[K]) List(selector labels.Selector) (ret []K, err error) {
+func (t Lister[K]) List(selector labels.Selector) (ret []K, err error) {
 	objs, err := t.lister.List(selector)
 	if err != nil {
 		return nil, err
@@ -26,7 +26,7 @@ func (t TypedLister[K]) List(selector labels.Selector) (ret []K, err error) {
 	return UnstructuredListToTypeList[K](objs)
 }
 
-func (t TypedLister[K]) Get(name string) (K, error) {
+func (t Lister[K]) Get(name string) (K, error) {
 	var typedObj *K
 	obj, err := t.lister.Get(name)
 	if err != nil {
@@ -35,17 +35,17 @@ func (t TypedLister[K]) Get(name string) (K, error) {
 	return UnstructuredObjToTypedObj[K](obj)
 }
 
-func (t TypedLister[K]) ByNamespace(namespace string) TypedNamespaceLister[K] {
-	return TypedNamespaceLister[K]{
+func (t Lister[K]) ByNamespace(namespace string) NamespaceLister[K] {
+	return NamespaceLister[K]{
 		lister: t.lister.ByNamespace(namespace),
 	}
 }
 
-type TypedNamespaceLister[K runtime.Object] struct {
+type NamespaceLister[K runtime.Object] struct {
 	lister cache.GenericNamespaceLister
 }
 
-func (t TypedNamespaceLister[K]) List(selector labels.Selector) (ret []K, err error) {
+func (t NamespaceLister[K]) List(selector labels.Selector) (ret []K, err error) {
 	objs, err := t.lister.List(selector)
 	if err != nil {
 		return nil, err
@@ -54,7 +54,7 @@ func (t TypedNamespaceLister[K]) List(selector labels.Selector) (ret []K, err er
 	return UnstructuredListToTypeList[K](objs)
 }
 
-func (t TypedNamespaceLister[K]) Get(name string) (K, error) {
+func (t NamespaceLister[K]) Get(name string) (K, error) {
 	var typedObj *K
 	obj, err := t.lister.Get(name)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"runtime"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 	componentconfig "k8s.io/component-base/config"
@@ -40,8 +41,9 @@ func NewManager(debugConfig *componentconfig.DebuggingConfiguration, address str
 	return &Manager{
 		healthzHandler: handler,
 		srv: &http.Server{
-			Handler: genericcontrollermanager.NewBaseHandler(debugConfig, handler),
-			Addr:    address,
+			Handler:           genericcontrollermanager.NewBaseHandler(debugConfig, handler),
+			Addr:              address,
+			ReadHeaderTimeout: 20 * time.Second,
 		},
 	}
 }
