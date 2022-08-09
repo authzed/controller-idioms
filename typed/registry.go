@@ -5,7 +5,6 @@ package typed
 import (
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -40,16 +39,15 @@ func NewRegistryKey(gvr schema.GroupVersionResource, name string) RegistryKey {
 }
 
 type Registry struct {
-	mapper    meta.RESTMapper
 	informers map[any]dynamicinformer.DynamicSharedInformerFactory
 }
 
-func TypedListerFor[K runtime.Object](r *Registry, key RegistryKey) *TypedLister[K] {
-	return NewTypedLister[K](r.ListerFor(key))
+func ListerFor[K runtime.Object](r *Registry, key RegistryKey) *Lister[K] {
+	return NewLister[K](r.ListerFor(key))
 }
 
-func TypedIndexerFor[K runtime.Object](r *Registry, key RegistryKey) *TypedIndexer[K] {
-	return NewTypedIndexer[K](r.InformerFor(key).GetIndexer())
+func IndexerFor[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
+	return NewIndexer[K](r.InformerFor(key).GetIndexer())
 }
 
 func (r *Registry) InformerFactoryFor(key RegistryKey) informers.GenericInformer {

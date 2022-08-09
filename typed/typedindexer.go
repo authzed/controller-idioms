@@ -9,35 +9,35 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-type TypedIndexer[K runtime.Object] struct {
+type Indexer[K runtime.Object] struct {
 	indexer cache.Indexer
 }
 
-func NewTypedIndexer[K runtime.Object](indexer cache.Indexer) *TypedIndexer[K] {
-	return &TypedIndexer[K]{indexer: indexer}
+func NewIndexer[K runtime.Object](indexer cache.Indexer) *Indexer[K] {
+	return &Indexer[K]{indexer: indexer}
 }
 
-func (t TypedIndexer[K]) Add(obj K) error {
+func (t Indexer[K]) Add(obj K) error {
 	return t.indexer.Add(obj)
 }
 
-func (t TypedIndexer[K]) Update(obj K) error {
+func (t Indexer[K]) Update(obj K) error {
 	return t.indexer.Update(obj)
 }
 
-func (t TypedIndexer[K]) Delete(obj K) error {
+func (t Indexer[K]) Delete(obj K) error {
 	return t.indexer.Delete(obj)
 }
 
-func (t TypedIndexer[K]) List() []K {
+func (t Indexer[K]) List() []K {
 	return IndexerListToTypedList[K](t.indexer.List())
 }
 
-func (t TypedIndexer[K]) ListKeys() []string {
+func (t Indexer[K]) ListKeys() []string {
 	return t.indexer.ListKeys()
 }
 
-func (t TypedIndexer[K]) Get(obj K) (item K, exists bool, err error) {
+func (t Indexer[K]) Get(obj K) (item K, exists bool, err error) {
 	var typedObj *K
 	gotItem, gotExists, gotErr := t.indexer.Get(obj)
 	if err != nil || !gotExists {
@@ -55,7 +55,7 @@ func (t TypedIndexer[K]) Get(obj K) (item K, exists bool, err error) {
 	return gotTypedObj, gotExists, gotErr
 }
 
-func (t TypedIndexer[K]) GetByKey(key string) (item interface{}, exists bool, err error) {
+func (t Indexer[K]) GetByKey(key string) (item interface{}, exists bool, err error) {
 	var typedObj *K
 	gotItem, gotExists, gotErr := t.indexer.GetByKey(key)
 	if err != nil || !gotExists {
@@ -73,15 +73,15 @@ func (t TypedIndexer[K]) GetByKey(key string) (item interface{}, exists bool, er
 	return gotTypedObj, gotExists, gotErr
 }
 
-func (t TypedIndexer[K]) IndexKeys(indexName, indexedValue string) ([]string, error) {
+func (t Indexer[K]) IndexKeys(indexName, indexedValue string) ([]string, error) {
 	return t.indexer.IndexKeys(indexName, indexedValue)
 }
 
-func (t TypedIndexer[K]) ListIndexFuncValues(indexName string) []string {
+func (t Indexer[K]) ListIndexFuncValues(indexName string) []string {
 	return t.indexer.ListIndexFuncValues(indexName)
 }
 
-func (t TypedIndexer[K]) ByIndex(indexName, indexedValue string) ([]K, error) {
+func (t Indexer[K]) ByIndex(indexName, indexedValue string) ([]K, error) {
 	objs, err := t.indexer.ByIndex(indexName, indexedValue)
 	if err != nil {
 		return nil, err
@@ -89,11 +89,11 @@ func (t TypedIndexer[K]) ByIndex(indexName, indexedValue string) ([]K, error) {
 	return IndexerListToTypedList[K](objs), nil
 }
 
-func (t TypedIndexer[K]) GetIndexers() cache.Indexers {
+func (t Indexer[K]) GetIndexers() cache.Indexers {
 	return t.indexer.GetIndexers()
 }
 
-func (t TypedIndexer[K]) AddIndexers(newIndexers cache.Indexers) error {
+func (t Indexer[K]) AddIndexers(newIndexers cache.Indexers) error {
 	return t.indexer.AddIndexers(newIndexers)
 }
 
