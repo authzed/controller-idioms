@@ -37,14 +37,14 @@ func IsPaused(object metav1.Object, pausedLabelKey string) bool {
 type PauseHandler[K HasStatusConditions] struct {
 	ctrls          *ContextKey[ControlAll]
 	PausedLabelKey string
-	Object         K
+	Object         *ContextDefaultingKey[K]
 	PatchStatus    func(ctx context.Context, patch K) error
 	Next           handler.ContextHandler
 }
 
 func NewPauseHandler[K HasStatusConditions](ctrls *ContextKey[ControlAll],
 	pausedLabelKey string,
-	object K,
+	object *ContextDefaultingKey[K],
 	patchStatus func(ctx context.Context, patch K) error,
 	next handler.ContextHandler,
 ) *PauseHandler[K] {
@@ -57,14 +57,14 @@ func NewPauseHandler[K HasStatusConditions](ctrls *ContextKey[ControlAll],
 	}
 }
 
-func (p *PauseHandler[K]) pause(ctx context.Context) {
-	if p.Object.FindStatusCondition(ConditionTypePaused) != nil {
+func (p *PauseHandler[K]) pause(object K, ctx context.Context) {
+	if object.FindStatusCondition(ConditionTypePaused) != nil {
 		p.ctrls.MustValue(ctx).Done()
 		return
 	}
-	p.Object.SetStatusCondition(NewPausedCondition(p.PausedLabelKey))
-	p.Object.SetManagedFields(nil)
-	if err := p.PatchStatus(ctx, p.Object); err != nil {
+	object.SetStatusCondition(NewPausedCondition(p.PausedLabelKey))
+	object.SetManagedFields(nil)
+	if err := p.PatchStatus(ctx, object); err != nil {
 		p.ctrls.MustValue(ctx).RequeueErr(err)
 		return
 	}
@@ -72,8 +72,9 @@ func (p *PauseHandler[K]) pause(ctx context.Context) {
 }
 
 func (p *PauseHandler[K]) Handle(ctx context.Context) {
-	if IsPaused(p.Object, p.PausedLabelKey) {
-		p.pause(ctx)
+	obj := p.Object.MustValue(ctx)
+	if IsPaused(obj, p.PausedLabelKey) {
+		p.pause(obj, ctx)
 		return
 	}
 	p.Next.Handle(ctx)
