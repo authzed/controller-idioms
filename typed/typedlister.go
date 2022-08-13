@@ -27,10 +27,10 @@ func (t Lister[K]) List(selector labels.Selector) (ret []K, err error) {
 }
 
 func (t Lister[K]) Get(name string) (K, error) {
-	var typedObj *K
 	obj, err := t.lister.Get(name)
 	if err != nil {
-		return *typedObj, err
+		var nilObj K
+		return nilObj, err
 	}
 	return UnstructuredObjToTypedObj[K](obj)
 }
@@ -55,10 +55,10 @@ func (t NamespaceLister[K]) List(selector labels.Selector) (ret []K, err error) 
 }
 
 func (t NamespaceLister[K]) Get(name string) (K, error) {
-	var typedObj *K
 	obj, err := t.lister.Get(name)
 	if err != nil {
-		return *typedObj, err
+		var nilObj K
+		return nilObj, err
 	}
 	return UnstructuredObjToTypedObj[K](obj)
 }
@@ -79,10 +79,12 @@ func UnstructuredObjToTypedObj[K runtime.Object](obj runtime.Object) (K, error) 
 	var typedObj *K
 	u, ok := obj.(*unstructured.Unstructured)
 	if !ok {
-		return *typedObj, fmt.Errorf("invalid object %T", obj)
+		var nilObj K
+		return nilObj, fmt.Errorf("invalid object %T", obj)
 	}
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &typedObj); err != nil {
-		return *typedObj, fmt.Errorf("invalid object: %w", err)
+		var nilObj K
+		return nilObj, fmt.Errorf("invalid object: %w", err)
 	}
 	return *typedObj, nil
 }
