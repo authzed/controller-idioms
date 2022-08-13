@@ -38,3 +38,18 @@ func KlogMiddleware(controllerName string, ref klog.ObjectRef) libctrl.HandlerMi
 		}, in.ID())
 	}
 }
+
+func NewHandlerLoggingMiddleware(level int) libctrl.Middleware {
+	return libctrl.MakeMiddleware(HandlerLoggingMiddleware(level))
+}
+
+func HandlerLoggingMiddleware(level int) libctrl.HandlerMiddleware {
+	return func(in handler.Handler) handler.Handler {
+		return handler.NewHandlerFromFunc(func(ctx context.Context) {
+			logger := klog.FromContext(ctx)
+			logger = logger.WithValues("handler", in.ID())
+			logger.V(level).Info("entering handler")
+			in.Handle(ctx)
+		}, in.ID())
+	}
+}
