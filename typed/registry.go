@@ -4,6 +4,7 @@ package typed
 
 import (
 	"fmt"
+	"sync"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -39,6 +40,7 @@ func NewRegistryKey(gvr schema.GroupVersionResource, name string) RegistryKey {
 }
 
 type Registry struct {
+	sync.RWMutex
 	informers map[any]dynamicinformer.DynamicSharedInformerFactory
 }
 
@@ -50,7 +52,15 @@ func IndexerFor[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
 	return NewIndexer[K](r.InformerFor(key).GetIndexer())
 }
 
+func (r *Registry) Add(key RegistryKey, factory dynamicinformer.DynamicSharedInformerFactory) {
+	r.Lock()
+	defer r.Unlock()
+	r.informers[key] = factory
+}
+
 func (r *Registry) InformerFactoryFor(key RegistryKey) informers.GenericInformer {
+	r.RLock()
+	defer r.RUnlock()
 	factory, ok := r.informers[key]
 	if !ok {
 		utilruntime.HandleError(fmt.Errorf("InformerFactoryFor called with unknown key %s", key))
