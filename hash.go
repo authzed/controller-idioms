@@ -48,8 +48,7 @@ func NewObjectHash() ObjectHasher {
 }
 
 func SecureHashObject(obj interface{}) (string, error) {
-	// 224 fits into an annotation value, 256 does not
-	hasher := sha512.New512_224()
+	hasher := sha512.New512_256()
 	printer := spew.ConfigState{
 		Indent:         " ",
 		SortKeys:       true,
@@ -60,7 +59,13 @@ func SecureHashObject(obj interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return rand.SafeEncodeString(fmt.Sprint(hasher.Sum(nil))), nil
+	// xxhash the sha512 hash to get a shorter value
+	xxhasher := xxhash.New()
+	_, err = xxhasher.Write(hasher.Sum(nil))
+	if err != nil {
+		return "", err
+	}
+	return rand.SafeEncodeString(fmt.Sprint(xxhasher.Sum(nil))), nil
 }
 
 func SecureHashEqual(a, b string) bool {
