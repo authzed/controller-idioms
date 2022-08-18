@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/klog/v2"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -26,10 +26,12 @@ func (h HandlerControlContext) Requeue(ctx context.Context) {
 }
 
 func (h HandlerControlContext) RequeueErr(ctx context.Context, err error) {
+	klog.FromContext(ctx).V(4).WithCallDepth(3).Error(err, "requeueing after error")
 	h.MustValue(ctx).RequeueErr(err)
 }
 
 func (h HandlerControlContext) RequeueAPIErr(ctx context.Context, err error) {
+	klog.FromContext(ctx).V(4).WithCallDepth(3).Error(err, "requeueing after api error")
 	h.MustValue(ctx).RequeueAPIErr(err)
 }
 
@@ -67,12 +69,10 @@ func (c *HandlerControls) Requeue() {
 }
 
 func (c *HandlerControls) RequeueErr(err error) {
-	utilruntime.HandleError(err)
 	c.requeueAfter(0)
 }
 
 func (c *HandlerControls) RequeueAPIErr(err error) {
-	utilruntime.HandleError(err)
 	retry, after := ShouldRetry(err)
 	if retry && after > 0 {
 		c.RequeueAfter(after)
