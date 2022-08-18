@@ -30,7 +30,15 @@ type Component[K metav1.Object] struct {
 func NewComponent[K metav1.Object](informers map[schema.GroupVersionResource]dynamicinformer.DynamicSharedInformerFactory, gvr schema.GroupVersionResource, indexName string, selector labels.Selector) *Component[K] {
 	return &Component[K]{
 		indexer:   informers[gvr].ForResource(gvr).Informer().GetIndexer(),
-		gvr:       gvr,
+		indexName: indexName,
+		selector:  selector,
+	}
+}
+
+// NewIndexedComponent creates a component from an index
+func NewIndexedComponent[K metav1.Object](indexer cache.Indexer, indexName string, selector labels.Selector) *Component[K] {
+	return &Component[K]{
+		indexer:   indexer,
 		indexName: indexName,
 		selector:  selector,
 	}
@@ -54,7 +62,7 @@ func (c *Component[K]) List(indexValue fmt.Stringer) (out []K) {
 		}
 		var obj *K
 		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unst.Object, &obj); err != nil {
-			utilruntime.HandleError(fmt.Errorf("invalid object returned from index, expected %s, got: %s: %w", c.gvr.Resource, unst.GroupVersionKind(), err))
+			utilruntime.HandleError(fmt.Errorf("invalid object returned from index, expected %T, got: %s: %w", obj, unst.GroupVersionKind(), err))
 			continue
 		}
 		ls := (*obj).GetLabels()

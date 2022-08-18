@@ -11,6 +11,14 @@ type SettableContext[V any] interface {
 	WithValue(ctx context.Context, val V) context.Context
 }
 
+type ValueContext[V any] interface {
+	Value(ctx context.Context) (V, bool)
+}
+
+type MustValueContext[V any] interface {
+	MustValue(ctx context.Context) V
+}
+
 // ContextKey is a type that is used as a key in a context.Context for a
 // specific type of value V. It mimics the context.Context interface
 type ContextKey[V any] struct{}
