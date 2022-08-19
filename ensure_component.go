@@ -4,7 +4,6 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	applycorev1 "k8s.io/client-go/applyconfigurations/core/v1"
 
@@ -15,7 +14,7 @@ type Annotator[T any] interface {
 	WithAnnotations(entries map[string]string) T
 }
 
-type EnsureComponentByHash[K metav1.Object, A Annotator[A]] struct {
+type EnsureComponentByHash[K KubeObject, A Annotator[A]] struct {
 	*HashableComponent[K]
 	ctrls        *ContextKey[ControlAll]
 	nn           types.NamespacedName
@@ -26,7 +25,7 @@ type EnsureComponentByHash[K metav1.Object, A Annotator[A]] struct {
 
 var _ handler.ContextHandler = &EnsureComponentByHash[*corev1.Service, *applycorev1.ServiceApplyConfiguration]{}
 
-func NewEnsureComponentByHash[K metav1.Object, A Annotator[A]](
+func NewEnsureComponentByHash[K KubeObject, A Annotator[A]](
 	component *HashableComponent[K],
 	owner types.NamespacedName,
 	ctrls *ContextKey[ControlAll],
@@ -70,7 +69,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 	}
 
 	if len(matchingObjs) == 0 {
-		// apply if no matching object in cluster
+		// apply if no matching KubeObject in cluster
 		_, err = e.applyObject(ctx, newObj)
 		if err != nil {
 			e.ctrls.MustValue(ctx).RequeueErr(err)
