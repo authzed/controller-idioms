@@ -4,20 +4,25 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic/dynamicinformer"
-	"k8s.io/client-go/tools/cache"
+
+	"github.com/authzed/ktrllib/typed"
 )
 
-// Component represents an object in the cluster that is "related" to another
+type KubeObject interface {
+	metav1.Object
+	runtime.Object
+}
+
+// Component represents an KubeObject in the cluster that is "related" to another
 // i.e. a pod would be a component of a deployment (though direct ownership is
 // not required).
-type Component[K metav1.Object] struct {
-	indexer   cache.Indexer
+type Component[K KubeObject] struct {
+	indexer   *typed.Indexer[K]
 	selector  labels.Selector
 	indexName string
 	gvr       schema.GroupVersionResource
@@ -27,16 +32,16 @@ type Component[K metav1.Object] struct {
 
 // NewComponent creates a component from an index name, a gvr, a selector, and a
 // set of informers.
-func NewComponent[K metav1.Object](informers map[schema.GroupVersionResource]dynamicinformer.DynamicSharedInformerFactory, gvr schema.GroupVersionResource, indexName string, selector labels.Selector) *Component[K] {
+func NewComponent[K KubeObject](informers map[schema.GroupVersionResource]dynamicinformer.DynamicSharedInformerFactory, gvr schema.GroupVersionResource, indexName string, selector labels.Selector) *Component[K] {
 	return &Component[K]{
-		indexer:   informers[gvr].ForResource(gvr).Informer().GetIndexer(),
+		indexer:   typed.NewIndexer[K](informers[gvr].ForResource(gvr).Informer().GetIndexer()),
 		indexName: indexName,
 		selector:  selector,
 	}
 }
 
 // NewIndexedComponent creates a component from an index
-func NewIndexedComponent[K metav1.Object](indexer cache.Indexer, indexName string, selector labels.Selector) *Component[K] {
+func NewIndexedComponent[K KubeObject](indexer *typed.Indexer[K], indexName string, selector labels.Selector) *Component[K] {
 	return &Component[K]{
 		indexer:   indexer,
 		indexName: indexName,
@@ -55,22 +60,12 @@ func (c *Component[K]) List(indexValue fmt.Stringer) (out []K) {
 		return
 	}
 	for _, d := range ownedObjects {
-		unst, ok := d.(*unstructured.Unstructured)
-		if !ok {
-			utilruntime.HandleError(fmt.Errorf("invalid object returned from index, expected unstructured, got: %T", d))
-			continue
-		}
-		var obj *K
-		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unst.Object, &obj); err != nil {
-			utilruntime.HandleError(fmt.Errorf("invalid object returned from index, expected %T, got: %s: %w", obj, unst.GroupVersionKind(), err))
-			continue
-		}
-		ls := (*obj).GetLabels()
+		ls := d.GetLabels()
 		if ls == nil {
 			continue
 		}
 		if c.selector.Matches(labels.Set(ls)) {
-			out = append(out, *obj)
+			out = append(out, d)
 		}
 	}
 	return out
@@ -78,13 +73,13 @@ func (c *Component[K]) List(indexValue fmt.Stringer) (out []K) {
 
 // HashableComponent is a Component with an annotation that stores a hash of the
 // previous configuration the controller wrote
-type HashableComponent[K metav1.Object] struct {
+type HashableComponent[K KubeObject] struct {
 	Component[K]
 	ObjectHasher
 	HashAnnotationKey string
 }
 
-func NewHashableComponent[K metav1.Object](component Component[K], hasher ObjectHasher, key string) *HashableComponent[K] {
+func NewHashableComponent[K KubeObject](component Component[K], hasher ObjectHasher, key string) *HashableComponent[K] {
 	return &HashableComponent[K]{
 		Component:         component,
 		ObjectHasher:      hasher,
