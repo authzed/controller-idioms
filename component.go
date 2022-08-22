@@ -6,9 +6,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/dynamic/dynamicinformer"
 
 	"github.com/authzed/ktrllib/typed"
 )
@@ -25,19 +23,6 @@ type Component[K KubeObject] struct {
 	indexer   *typed.Indexer[K]
 	selector  labels.Selector
 	indexName string
-	gvr       schema.GroupVersionResource
-}
-
-// TODO: may want other constructors
-
-// NewComponent creates a component from an index name, a gvr, a selector, and a
-// set of informers.
-func NewComponent[K KubeObject](informers map[schema.GroupVersionResource]dynamicinformer.DynamicSharedInformerFactory, gvr schema.GroupVersionResource, indexName string, selector labels.Selector) *Component[K] {
-	return &Component[K]{
-		indexer:   typed.NewIndexer[K](informers[gvr].ForResource(gvr).Informer().GetIndexer()),
-		indexName: indexName,
-		selector:  selector,
-	}
 }
 
 // NewIndexedComponent creates a component from an index

@@ -18,7 +18,6 @@ import (
 	controllerhealthz "k8s.io/controller-manager/pkg/healthz"
 	"k8s.io/klog/v2"
 
-	"github.com/authzed/spicedb-operator/pkg/controller/handlers"
 	"github.com/authzed/ktrllib"
 	"github.com/authzed/ktrllib/cachekeys"
 	"github.com/authzed/ktrllib/typed"
@@ -61,9 +60,7 @@ func (c *BasicController) HealthChecker() controllerhealthz.UnnamedHealthChecker
 	return apisrvhealthz.PingHealthz
 }
 
-func (c *BasicController) Start(ctx context.Context, numThreads int) {
-	return
-}
+func (c *BasicController) Start(ctx context.Context, numThreads int) {}
 
 // OwnedResourceController implements Controller that implements our standard
 // controller pattern:
@@ -74,6 +71,7 @@ func (c *BasicController) Start(ctx context.Context, numThreads int) {
 //   - The owned object has standard meta.Conditions and emits metrics for them
 type OwnedResourceController struct {
 	*BasicController
+	libctrl.HandlerControlContext
 	Registry *typed.Registry
 	Recorder record.EventRecorder
 	Owned    schema.GroupVersionResource
@@ -81,14 +79,15 @@ type OwnedResourceController struct {
 	sync     SyncFunc
 }
 
-func NewOwnedResourceController(name string, owned schema.GroupVersionResource, registry *typed.Registry, broadcaster record.EventBroadcaster, syncFunc SyncFunc) *OwnedResourceController {
+func NewOwnedResourceController(name string, owned schema.GroupVersionResource, key libctrl.HandlerControlContext, registry *typed.Registry, broadcaster record.EventBroadcaster, syncFunc SyncFunc) *OwnedResourceController {
 	return &OwnedResourceController{
-		BasicController: NewBasicController(name),
-		Registry:        registry,
-		Owned:           owned,
-		Queue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), name+"_queue"),
-		Recorder:        broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: name}),
-		sync:            syncFunc,
+		BasicController:       NewBasicController(name),
+		HandlerControlContext: key,
+		Registry:              registry,
+		Owned:                 owned,
+		Queue:                 workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), name+"_queue"),
+		Recorder:              broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: name}),
+		sync:                  syncFunc,
 	}
 }
 
@@ -144,7 +143,7 @@ func (c *OwnedResourceController) processNext(ctx context.Context) bool {
 		c.Queue.AddAfter(key, after)
 	}
 
-	ctx = handlers.CtxHandlerControls.WithValue(ctx, libctrl.NewHandlerControls(done, requeue))
+	ctx = c.HandlerControlContext.WithValue(ctx, libctrl.NewHandlerControls(done, requeue))
 
 	c.sync(ctx, *gvr, namespace, name)
 

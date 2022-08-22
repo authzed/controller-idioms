@@ -57,7 +57,7 @@ func NewPauseHandler[K HasStatusConditions](ctrls *ContextKey[ControlAll],
 	}
 }
 
-func (p *PauseHandler[K]) pause(object K, ctx context.Context) {
+func (p *PauseHandler[K]) pause(ctx context.Context, object K) {
 	if object.FindStatusCondition(ConditionTypePaused) != nil {
 		p.ctrls.MustValue(ctx).Done()
 		return
@@ -72,9 +72,8 @@ func (p *PauseHandler[K]) pause(object K, ctx context.Context) {
 }
 
 func (p *PauseHandler[K]) Handle(ctx context.Context) {
-	obj := p.Object.MustValue(ctx)
-	if IsPaused(obj, p.PausedLabelKey) {
-		p.pause(obj, ctx)
+	if obj := p.Object.MustValue(ctx); IsPaused(obj, p.PausedLabelKey) {
+		p.pause(ctx, obj)
 		return
 	}
 	p.Next.Handle(ctx)
