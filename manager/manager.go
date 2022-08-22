@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	apisrvhealthz "k8s.io/apiserver/pkg/server/healthz"
 	componentconfig "k8s.io/component-base/config"
 	genericcontrollermanager "k8s.io/controller-manager/app"
 	"k8s.io/controller-manager/controller"
@@ -25,6 +26,34 @@ type Controller interface {
 	controller.HealthCheckable
 
 	Start(ctx context.Context, numThreads int)
+}
+
+// BasicController implements Controller with a no-op control loop and simple
+// health check and debug handlers.
+type BasicController struct {
+	name string
+}
+
+var _ Controller = &BasicController{}
+
+func NewBasicController(name string) *BasicController {
+	return &BasicController{name: name}
+}
+
+func (c *BasicController) Name() string {
+	return c.name
+}
+
+func (c *BasicController) DebuggingHandler() http.Handler {
+	return http.NotFoundHandler()
+}
+
+func (c *BasicController) HealthChecker() controllerhealthz.UnnamedHealthChecker {
+	return apisrvhealthz.PingHealthz
+}
+
+func (c *BasicController) Start(ctx context.Context, numThreads int) {
+	return
 }
 
 // Manager ties a set of controllers to be lifecycled together and exposes common
