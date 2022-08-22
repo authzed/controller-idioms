@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"github.com/cespare/xxhash/v2"
@@ -46,7 +45,7 @@ func ResourceFromFile[O KubeResourceObject](ctx context.Context, gvr schema.Grou
 		return 0, err
 	}
 
-	contents, err := ioutil.ReadAll(f)
+	contents, err := io.ReadAll(f)
 	if err != nil {
 		return 0, err
 	}

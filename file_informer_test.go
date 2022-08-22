@@ -2,7 +2,6 @@ package libctrl
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"sync"
 	"testing"
@@ -17,10 +16,10 @@ func TestFileInformer(t *testing.T) {
 	informerFactory, err := NewFileInformerFactory()
 	require.NoError(t, err)
 
-	file, err := ioutil.TempFile("", "watched-file")
+	file, err := os.CreateTemp("", "watched-file")
 	require.NoError(t, err)
 
-	file2, err := ioutil.TempFile("", "watched-file")
+	file2, err := os.CreateTemp("", "watched-file")
 	require.NoError(t, err)
 	defer require.NoError(t, file2.Close())
 

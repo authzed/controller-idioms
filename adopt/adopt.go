@@ -6,19 +6,18 @@
 //
 // Adoption happens in two phases:
 //
-// 1. Labelling - the resource is labelled as managed by the controller. This
-//    is primarily so that the controller an open a label-filtered watch against
-//    the cluster instead of watching all objects, which keeps the cache small
-//    and avoids unwanted data (i.e. watching all secrets).
-// 2. Owner Annotation - the resource is annotated as owned by one or more
-//    objects. The annotation is done using a unique field manager per owner,
-//    which allows server-side-apply to reconcile the owner annotations without
-//    providing the full list of owners every time.
+//  1. Labelling - the resource is labelled as managed by the controller. This
+//     is primarily so that the controller an open a label-filtered watch against
+//     the cluster instead of watching all objects, which keeps the cache small
+//     and avoids unwanted data (i.e. watching all secrets).
+//  2. Owner Annotation - the resource is annotated as owned by one or more
+//     objects. The annotation is done using a unique field manager per owner,
+//     which allows server-side-apply to reconcile the owner annotations without
+//     providing the full list of owners every time.
 //
 // There are additional utilities for cleaning up old ownership labels and
 // annotations and for constructing or consuming index and cache keys for
 // adopted objects.
-
 package adopt
 
 import (
