@@ -9,52 +9,13 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
-	apisrvhealthz "k8s.io/apiserver/pkg/server/healthz"
+	"k8s.io/client-go/tools/record"
 	componentconfig "k8s.io/component-base/config"
 	genericcontrollermanager "k8s.io/controller-manager/app"
-	"k8s.io/controller-manager/controller"
 	controllerhealthz "k8s.io/controller-manager/pkg/healthz"
 
 	"github.com/authzed/controller-idioms/healthz"
 )
-
-// Controller is the interface we require for all controllers this manager will
-// manage.
-type Controller interface {
-	controller.Interface
-	controller.Debuggable
-	controller.HealthCheckable
-
-	Start(ctx context.Context, numThreads int)
-}
-
-// BasicController implements Controller with a no-op control loop and simple
-// health check and debug handlers.
-type BasicController struct {
-	name string
-}
-
-var _ Controller = &BasicController{}
-
-func NewBasicController(name string) *BasicController {
-	return &BasicController{name: name}
-}
-
-func (c *BasicController) Name() string {
-	return c.name
-}
-
-func (c *BasicController) DebuggingHandler() http.Handler {
-	return http.NotFoundHandler()
-}
-
-func (c *BasicController) HealthChecker() controllerhealthz.UnnamedHealthChecker {
-	return apisrvhealthz.PingHealthz
-}
-
-func (c *BasicController) Start(ctx context.Context, numThreads int) {
-	return
-}
 
 // Manager ties a set of controllers to be lifecycled together and exposes common
 // metrics, debug information, and health endpoints for the set.
@@ -74,11 +35,15 @@ type Manager struct {
 	// a registry of cancel functions for each individual controller
 	sync.RWMutex
 	cancelFuncs map[Controller]func()
+
+	// for broadcasting events
+	broadcaster record.EventBroadcaster
+	sink        record.EventSink
 }
 
 // NewManager returns a Manager object with settings for what and how to expose
 // information for its managed set of controllers.
-func NewManager(debugConfig *componentconfig.DebuggingConfiguration, address string) *Manager {
+func NewManager(debugConfig *componentconfig.DebuggingConfiguration, address string, broadcaster record.EventBroadcaster, sink record.EventSink) *Manager {
 	handler := healthz.NewMutableHealthzHandler()
 	return &Manager{
 		healthzHandler: handler,
@@ -88,6 +53,8 @@ func NewManager(debugConfig *componentconfig.DebuggingConfiguration, address str
 			ReadHeaderTimeout: 20 * time.Second,
 		},
 		cancelFuncs: make(map[Controller]func(), 0),
+		broadcaster: broadcaster,
+		sink:        sink,
 	}
 }
 
@@ -98,9 +65,13 @@ func (m *Manager) Start(ctx context.Context, controllers ...Controller) error {
 	if m.errG != nil {
 		return fmt.Errorf("manager already started")
 	}
+
+	broadcaster := record.NewBroadcaster()
+
 	m.once.Do(func() {
 		m.errG, ctx = errgroup.WithContext(ctx)
 		m.errGCtx = ctx
+
 		// start controllers
 		for _, c := range controllers {
 			c := c
@@ -122,9 +93,18 @@ func (m *Manager) Start(ctx context.Context, controllers ...Controller) error {
 			return m.srv.ListenAndServe()
 		})
 
+		// start broadcaster
+
+		m.errG.Go(func() error {
+			broadcaster.StartStructuredLogging(2)
+			broadcaster.StartRecordingToSink(m.sink)
+			return nil
+		})
+
 		// stop health / debug server when context is cancelled
 		m.errG.Go(func() error {
 			<-ctx.Done()
+			m.broadcaster.Shutdown()
 			return m.srv.Shutdown(ctx)
 		})
 	})
