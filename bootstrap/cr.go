@@ -22,13 +22,13 @@ import (
 	"github.com/authzed/spicedb-operator/pkg/metadata"
 )
 
-type customResourceObject interface {
+type KubeResourceObject interface {
 	metav1.Object
 	runtime.Object
 }
 
 // ResourceFromFile bootstraps a CustomResource with the given config file
-func ResourceFromFile[O customResourceObject](ctx context.Context, gvr schema.GroupVersionResource, dclient dynamic.Interface, configPath string, lastHash uint64) (uint64, error) {
+func ResourceFromFile[O KubeResourceObject](ctx context.Context, gvr schema.GroupVersionResource, dclient dynamic.Interface, configPath string, lastHash uint64) (uint64, error) {
 	if len(configPath) <= 0 {
 		klog.V(4).Info("bootstrap file path not specified")
 		return 0, nil
