@@ -131,10 +131,12 @@ func (c *OwnedResourceController) processNext(ctx context.Context) bool {
 	ctx, cancel := context.WithCancel(ctx)
 
 	done := func() {
+		klog.FromContext(ctx).V(5).Info("done", "key", key)
 		cancel()
 		c.Queue.Forget(key)
 	}
 	requeue := func(after time.Duration) {
+		klog.FromContext(ctx).V(5).Info("requeue", "key", key, "after", after)
 		cancel()
 		if after == 0 {
 			c.Queue.AddRateLimited(key)
