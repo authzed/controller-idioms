@@ -105,7 +105,7 @@ func NewFileInformer(watcher *fsnotify.Watcher, gvr schema.GroupVersionResource)
 	return &FileInformer{
 		fileName: gvr.Resource,
 		watcher:  watcher,
-		informer: NewFileSharedIndexInformer(gvr.Resource, watcher, 15*time.Minute),
+		informer: NewFileSharedIndexInformer(gvr.Resource, watcher, 1*time.Minute),
 	}, nil
 }
 

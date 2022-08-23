@@ -2,7 +2,8 @@ package libctrl
 
 import (
 	"context"
-	"fmt"
+
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/authzed/ktrllib/handler"
 )
@@ -10,13 +11,13 @@ import (
 // ComponentContextHandler fills the value for a ContextKey with the result of
 // fetching a component.
 type ComponentContextHandler[K KubeObject] struct {
-	owner     fmt.Stringer
+	owner     MustValueContext[types.NamespacedName]
 	ctxKey    SettableContext[[]K]
 	component *Component[K]
 	next      handler.ContextHandler
 }
 
-func NewComponentContextHandler[K KubeObject](contextKey SettableContext[[]K], component *Component[K], owner fmt.Stringer, next handler.ContextHandler) *ComponentContextHandler[K] {
+func NewComponentContextHandler[K KubeObject](contextKey SettableContext[[]K], component *Component[K], owner MustValueContext[types.NamespacedName], next handler.ContextHandler) *ComponentContextHandler[K] {
 	return &ComponentContextHandler[K]{
 		owner:     owner,
 		ctxKey:    contextKey,
@@ -26,6 +27,6 @@ func NewComponentContextHandler[K KubeObject](contextKey SettableContext[[]K], c
 }
 
 func (h *ComponentContextHandler[K]) Handle(ctx context.Context) {
-	ctx = h.ctxKey.WithValue(ctx, h.component.List(h.owner))
+	ctx = h.ctxKey.WithValue(ctx, h.component.List(ctx, h.owner.MustValue(ctx)))
 	h.next.Handle(ctx)
 }

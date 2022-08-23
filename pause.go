@@ -42,7 +42,7 @@ type PauseHandler[K HasStatusConditions] struct {
 	Next           handler.ContextHandler
 }
 
-func NewPauseHandler[K HasStatusConditions](ctrls *ContextKey[ControlAll],
+func NewPauseContextHandler[K HasStatusConditions](ctrls *ContextKey[ControlAll],
 	pausedLabelKey string,
 	object *ContextDefaultingKey[K],
 	patchStatus func(ctx context.Context, patch K) error,
@@ -94,14 +94,12 @@ type SelfPauseHandler[K HasStatusConditions] struct {
 func NewSelfPauseHandler[K HasStatusConditions](ctrls *ContextKey[ControlAll],
 	pausedLabelKey string,
 	contextKey *ContextDefaultingKey[K],
-	ownerUID types.UID,
 	patch, patchStatus func(ctx context.Context, patch K) error,
 ) *SelfPauseHandler[K] {
 	return &SelfPauseHandler[K]{
 		CtxKey:         contextKey,
 		ctrls:          ctrls,
 		PausedLabelKey: pausedLabelKey,
-		OwnerUID:       ownerUID,
 		Patch:          patch,
 		PatchStatus:    patchStatus,
 	}

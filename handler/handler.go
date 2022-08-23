@@ -100,6 +100,12 @@ func (h Handlers) MustOne() Handler {
 	return h[0]
 }
 
+// NewTypeHandler assigns an id based on the underlying type to a ContextHandler
+// implementation and returns a Handler.
+func NewTypeHandler(h ContextHandler) Handler {
+	return Handler{ContextHandler: h, id: Key(fmt.Sprintf("%T", h))}
+}
+
 // NewHandler assigns an id to a ContextHandler implementation and returns a
 // Handler.
 func NewHandler(h ContextHandler, id Key) Handler {

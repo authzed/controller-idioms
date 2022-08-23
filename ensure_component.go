@@ -17,9 +17,9 @@ type Annotator[T any] interface {
 type EnsureComponentByHash[K KubeObject, A Annotator[A]] struct {
 	*HashableComponent[K]
 	ctrls        *ContextKey[ControlAll]
-	nn           types.NamespacedName
+	nn           MustValueContext[types.NamespacedName]
 	applyObject  func(ctx context.Context, apply A) (K, error)
-	deleteObject func(ctx context.Context, name string) error
+	deleteObject func(ctx context.Context, nn types.NamespacedName) error
 	newObj       func(ctx context.Context) A
 }
 
@@ -27,10 +27,10 @@ var _ handler.ContextHandler = &EnsureComponentByHash[*corev1.Service, *applycor
 
 func NewEnsureComponentByHash[K KubeObject, A Annotator[A]](
 	component *HashableComponent[K],
-	owner types.NamespacedName,
+	owner MustValueContext[types.NamespacedName],
 	ctrls *ContextKey[ControlAll],
 	applyObj func(ctx context.Context, apply A) (K, error),
-	deleteObject func(ctx context.Context, name string) error,
+	deleteObject func(ctx context.Context, nn types.NamespacedName) error,
 	newObj func(ctx context.Context) A,
 ) *EnsureComponentByHash[K, A] {
 	return &EnsureComponentByHash[K, A]{
@@ -44,7 +44,7 @@ func NewEnsureComponentByHash[K KubeObject, A Annotator[A]](
 }
 
 func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
-	ownedObjs := e.List(e.nn)
+	ownedObjs := e.List(ctx, e.nn.MustValue(ctx))
 
 	newObj := e.newObj(ctx)
 	hash, err := e.Hash(newObj)
@@ -80,7 +80,10 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 	if len(matchingObjs) == 1 {
 		// delete extra objects
 		for _, o := range extraObjs {
-			if err := e.deleteObject(ctx, o.GetName()); err != nil {
+			if err := e.deleteObject(ctx, types.NamespacedName{
+				Namespace: o.GetNamespace(),
+				Name:      o.GetName(),
+			}); err != nil {
 				e.ctrls.MustValue(ctx).RequeueErr(err)
 				return
 			}
