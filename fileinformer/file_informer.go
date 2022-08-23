@@ -1,4 +1,4 @@
-package libctrl
+package fileinformer
 
 import (
 	"context"
@@ -20,7 +20,7 @@ var FileGroupVersion = schema.GroupVersion{
 	Version: "v1",
 }
 
-type FileInformerFactory struct {
+type Factory struct {
 	sync.Mutex
 	informers map[schema.GroupVersionResource]informers.GenericInformer
 	// startedInformers is used for tracking which informers have been started.
@@ -28,16 +28,16 @@ type FileInformerFactory struct {
 	startedInformers map[schema.GroupVersionResource]bool
 }
 
-var _ dynamicinformer.DynamicSharedInformerFactory = &FileInformerFactory{}
+var _ dynamicinformer.DynamicSharedInformerFactory = &Factory{}
 
-func NewFileInformerFactory() (*FileInformerFactory, error) {
-	return &FileInformerFactory{
+func NewFileInformerFactory() (*Factory, error) {
+	return &Factory{
 		informers:        make(map[schema.GroupVersionResource]informers.GenericInformer),
 		startedInformers: make(map[schema.GroupVersionResource]bool),
 	}, nil
 }
 
-func (f *FileInformerFactory) Start(stopCh <-chan struct{}) {
+func (f *Factory) Start(stopCh <-chan struct{}) {
 	f.Lock()
 	defer f.Unlock()
 
@@ -49,7 +49,7 @@ func (f *FileInformerFactory) Start(stopCh <-chan struct{}) {
 	}
 }
 
-func (f *FileInformerFactory) ForResource(gvr schema.GroupVersionResource) informers.GenericInformer {
+func (f *Factory) ForResource(gvr schema.GroupVersionResource) informers.GenericInformer {
 	f.Lock()
 	defer f.Unlock()
 
@@ -72,7 +72,7 @@ func (f *FileInformerFactory) ForResource(gvr schema.GroupVersionResource) infor
 	return informer
 }
 
-func (f *FileInformerFactory) WaitForCacheSync(stopCh <-chan struct{}) map[schema.GroupVersionResource]bool {
+func (f *Factory) WaitForCacheSync(stopCh <-chan struct{}) map[schema.GroupVersionResource]bool {
 	infs := func() map[schema.GroupVersionResource]cache.SharedIndexInformer {
 		f.Lock()
 		defer f.Unlock()

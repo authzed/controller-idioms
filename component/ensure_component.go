@@ -1,4 +1,4 @@
-package libctrl
+package component
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	applycorev1 "k8s.io/client-go/applyconfigurations/core/v1"
 
 	"github.com/authzed/controller-idioms/handler"
+	"github.com/authzed/controller-idioms/queue"
+	"github.com/authzed/controller-idioms/typedctx"
 )
 
 type Annotator[T any] interface {
@@ -16,8 +18,8 @@ type Annotator[T any] interface {
 
 type EnsureComponentByHash[K KubeObject, A Annotator[A]] struct {
 	*HashableComponent[K]
-	ctrls        *ContextKey[ControlAll]
-	nn           MustValueContext[types.NamespacedName]
+	ctrls        *typedctx.Key[queue.Interface]
+	nn           typedctx.MustValueContext[types.NamespacedName]
 	applyObject  func(ctx context.Context, apply A) (K, error)
 	deleteObject func(ctx context.Context, nn types.NamespacedName) error
 	newObj       func(ctx context.Context) A
@@ -27,8 +29,8 @@ var _ handler.ContextHandler = &EnsureComponentByHash[*corev1.Service, *applycor
 
 func NewEnsureComponentByHash[K KubeObject, A Annotator[A]](
 	component *HashableComponent[K],
-	owner MustValueContext[types.NamespacedName],
-	ctrls *ContextKey[ControlAll],
+	owner typedctx.MustValueContext[types.NamespacedName],
+	ctrls *typedctx.Key[queue.Interface],
 	applyObj func(ctx context.Context, apply A) (K, error),
 	deleteObject func(ctx context.Context, nn types.NamespacedName) error,
 	newObj func(ctx context.Context) A,

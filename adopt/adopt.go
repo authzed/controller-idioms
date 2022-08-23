@@ -30,9 +30,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
-	"github.com/authzed/controller-idioms"
 	"github.com/authzed/controller-idioms/handler"
+	"github.com/authzed/controller-idioms/queue"
 	"github.com/authzed/controller-idioms/typed"
+	"github.com/authzed/controller-idioms/typedctx"
 )
 
 // TODO: a variant where there can only be one owner (label only, fail if labelled for someone else)
@@ -64,7 +65,7 @@ type IndexKeyFunc func(ctx context.Context) (indexName string, indexValue string
 const Owned = "owned"
 
 type AdoptionHandler[K Object, A Adoptable[A]] struct {
-	libctrl.HandlerControlContext
+	queue.OperationsContext
 
 	// ControllerFieldManager is the value to use when adopting the object
 	// for visibility by the controller
@@ -76,13 +77,13 @@ type AdoptionHandler[K Object, A Adoptable[A]] struct {
 	ControllerFieldManager string
 
 	// AdopteeCtx tells the handler how to fetch the adoptee from context
-	AdopteeCtx libctrl.MustValueContext[types.NamespacedName]
+	AdopteeCtx typedctx.MustValueContext[types.NamespacedName]
 
 	// OwnerCtx tells the handler how to fetch the owner from context
-	OwnerCtx libctrl.MustValueContext[types.NamespacedName]
+	OwnerCtx typedctx.MustValueContext[types.NamespacedName]
 
 	// AdoptedCtx will store the object after it has been adopted
-	AdoptedCtx libctrl.SettableContext[K]
+	AdoptedCtx typedctx.SettableContext[K]
 
 	// ObjectAdoptedFunc is called when an adoption was performed
 	ObjectAdoptedFunc func(ctx context.Context, obj K)
