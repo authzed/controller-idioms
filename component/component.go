@@ -1,4 +1,4 @@
-package libctrl
+package component
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
+	"github.com/authzed/ktrllib/hash"
 	"github.com/authzed/ktrllib/typed"
 )
 
@@ -61,11 +62,11 @@ func (c *Component[K]) List(ctx context.Context, indexValue fmt.Stringer) (out [
 // previous configuration the controller wrote
 type HashableComponent[K KubeObject] struct {
 	*Component[K]
-	ObjectHasher
+	hash.ObjectHasher
 	HashAnnotationKey string
 }
 
-func NewHashableComponent[K KubeObject](component *Component[K], hasher ObjectHasher, key string) *HashableComponent[K] {
+func NewHashableComponent[K KubeObject](component *Component[K], hasher hash.ObjectHasher, key string) *HashableComponent[K] {
 	return &HashableComponent[K]{
 		Component:         component,
 		ObjectHasher:      hasher,

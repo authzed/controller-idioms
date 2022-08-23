@@ -1,8 +1,8 @@
-package libctrl
+package middleware
 
 import "github.com/authzed/ktrllib/handler"
 
-// Chain chains a set of HandleBuilder together
+// Chain chains a set of BoxBuilder together
 func Chain(children ...handler.Builder) handler.Builder {
 	return func(...handler.Handler) handler.Handler {
 		next := handler.NoopHandler

@@ -9,8 +9,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 
-	"github.com/authzed/ktrllib"
 	"github.com/authzed/ktrllib/bootstrap"
+	"github.com/authzed/ktrllib/fileinformer"
 	"github.com/authzed/ktrllib/manager"
 )
 
@@ -18,7 +18,7 @@ type Controller[K bootstrap.KubeResourceObject] struct {
 	*manager.BasicController
 
 	path                  string
-	fileInformerFactory   *libctrl.FileInformerFactory
+	fileInformerFactory   *fileinformer.Factory
 	staticClusterResource schema.GroupVersionResource
 	gvr                   schema.GroupVersionResource
 	client                dynamic.Interface
@@ -27,7 +27,7 @@ type Controller[K bootstrap.KubeResourceObject] struct {
 }
 
 func NewStaticController[K bootstrap.KubeResourceObject](name string, path string, gvr schema.GroupVersionResource, client dynamic.Interface) (*Controller[K], error) {
-	fileInformerFactory, err := libctrl.NewFileInformerFactory()
+	fileInformerFactory, err := fileinformer.NewFileInformerFactory()
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func NewStaticController[K bootstrap.KubeResourceObject](name string, path strin
 		BasicController:       manager.NewBasicController(name),
 		path:                  path,
 		fileInformerFactory:   fileInformerFactory,
-		staticClusterResource: libctrl.FileGroupVersion.WithResource(path),
+		staticClusterResource: fileinformer.FileGroupVersion.WithResource(path),
 		gvr:                   gvr,
 		client:                client,
 	}, nil
@@ -48,6 +48,7 @@ func (c *Controller[K]) Start(ctx context.Context, numThreads int) {
 		UpdateFunc: func(_, obj interface{}) { c.handleStaticResource(ctx) },
 		DeleteFunc: func(obj interface{}) { c.handleStaticResource(ctx) },
 	})
+	c.fileInformerFactory.Start(ctx.Done())
 }
 
 func (c *Controller[K]) handleStaticResource(ctx context.Context) {

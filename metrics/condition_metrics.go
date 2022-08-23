@@ -8,10 +8,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/component-base/metrics"
 
-	"github.com/authzed/ktrllib"
+	"github.com/authzed/ktrllib/pause"
 )
 
-type ConditionStatusCollector[K libctrl.HasStatusConditions] struct {
+type ConditionStatusCollector[K pause.HasStatusConditions] struct {
 	metrics.BaseStableCollector
 
 	listerBuilders []func() ([]K, error)
@@ -23,7 +23,7 @@ type ConditionStatusCollector[K libctrl.HasStatusConditions] struct {
 	CollectorErrors       *metrics.Desc
 }
 
-func NewConditionStatusCollector[K libctrl.HasStatusConditions](namespace string, subsystem string, resourceName string) *ConditionStatusCollector[K] {
+func NewConditionStatusCollector[K pause.HasStatusConditions](namespace string, subsystem string, resourceName string) *ConditionStatusCollector[K] {
 	return &ConditionStatusCollector[K]{
 		ObjectCount: metrics.NewDesc(
 			prometheus.BuildFQName(namespace, subsystem, "count"),

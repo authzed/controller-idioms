@@ -1,4 +1,4 @@
-package libctrl
+package hash
 
 import (
 	"crypto/sha512"
@@ -12,7 +12,7 @@ import (
 
 type (
 	ObjectHashFunc func(obj any) (string, error)
-	HashEqualFunc  func(a, b string) bool
+	EqualFunc      func(a, b string) bool
 )
 
 type ObjectHasher interface {
@@ -22,7 +22,7 @@ type ObjectHasher interface {
 
 type hasher struct {
 	ObjectHashFunc
-	HashEqualFunc
+	EqualFunc
 }
 
 func (h *hasher) Hash(obj interface{}) (string, error) {
@@ -30,24 +30,24 @@ func (h *hasher) Hash(obj interface{}) (string, error) {
 }
 
 func (h *hasher) Equal(a, b string) bool {
-	return h.HashEqualFunc(a, b)
+	return h.EqualFunc(a, b)
 }
 
 func NewSecureObjectHash() ObjectHasher {
 	return &hasher{
-		ObjectHashFunc: SecureHashObject,
-		HashEqualFunc:  SecureHashEqual,
+		ObjectHashFunc: SecureObject,
+		EqualFunc:      SecureEqual,
 	}
 }
 
 func NewObjectHash() ObjectHasher {
 	return &hasher{
-		ObjectHashFunc: HashObject,
-		HashEqualFunc:  HashEqual,
+		ObjectHashFunc: Object,
+		EqualFunc:      Equal,
 	}
 }
 
-func SecureHashObject(obj interface{}) (string, error) {
+func SecureObject(obj interface{}) (string, error) {
 	hasher := sha512.New512_256()
 	printer := spew.ConfigState{
 		Indent:         " ",
@@ -68,11 +68,11 @@ func SecureHashObject(obj interface{}) (string, error) {
 	return rand.SafeEncodeString(fmt.Sprint(xxhasher.Sum(nil))), nil
 }
 
-func SecureHashEqual(a, b string) bool {
+func SecureEqual(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-func HashObject(obj interface{}) (string, error) {
+func Object(obj interface{}) (string, error) {
 	hasher := xxhash.New()
 	printer := spew.ConfigState{
 		Indent:         " ",
@@ -87,6 +87,6 @@ func HashObject(obj interface{}) (string, error) {
 	return rand.SafeEncodeString(fmt.Sprint(hasher.Sum(nil))), nil
 }
 
-func HashEqual(a, b string) bool {
+func Equal(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

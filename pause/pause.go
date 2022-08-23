@@ -1,4 +1,4 @@
-package libctrl
+package pause
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	"github.com/authzed/ktrllib/handler"
+	"github.com/authzed/ktrllib/queue"
+	"github.com/authzed/ktrllib/typedctx"
 )
 
 const ConditionTypePaused = "Paused"
@@ -34,21 +36,21 @@ func IsPaused(object metav1.Object, pausedLabelKey string) bool {
 	return ok
 }
 
-type PauseHandler[K HasStatusConditions] struct {
-	ctrls          *ContextKey[ControlAll]
+type Handler[K HasStatusConditions] struct {
+	ctrls          *typedctx.Key[queue.Interface]
 	PausedLabelKey string
-	Object         *ContextDefaultingKey[K]
+	Object         *typedctx.DefaultingKey[K]
 	PatchStatus    func(ctx context.Context, patch K) error
 	Next           handler.ContextHandler
 }
 
-func NewPauseContextHandler[K HasStatusConditions](ctrls *ContextKey[ControlAll],
+func NewPauseContextHandler[K HasStatusConditions](ctrls *typedctx.Key[queue.Interface],
 	pausedLabelKey string,
-	object *ContextDefaultingKey[K],
+	object *typedctx.DefaultingKey[K],
 	patchStatus func(ctx context.Context, patch K) error,
 	next handler.ContextHandler,
-) *PauseHandler[K] {
-	return &PauseHandler[K]{
+) *Handler[K] {
+	return &Handler[K]{
 		ctrls:          ctrls,
 		PausedLabelKey: pausedLabelKey,
 		Object:         object,
@@ -57,7 +59,7 @@ func NewPauseContextHandler[K HasStatusConditions](ctrls *ContextKey[ControlAll]
 	}
 }
 
-func (p *PauseHandler[K]) pause(ctx context.Context, object K) {
+func (p *Handler[K]) pause(ctx context.Context, object K) {
 	if object.FindStatusCondition(ConditionTypePaused) != nil {
 		p.ctrls.MustValue(ctx).Done()
 		return
@@ -71,7 +73,7 @@ func (p *PauseHandler[K]) pause(ctx context.Context, object K) {
 	p.ctrls.MustValue(ctx).Done()
 }
 
-func (p *PauseHandler[K]) Handle(ctx context.Context) {
+func (p *Handler[K]) Handle(ctx context.Context) {
 	if obj := p.Object.MustValue(ctx); IsPaused(obj, p.PausedLabelKey) {
 		p.pause(ctx, obj)
 		return
@@ -83,17 +85,17 @@ func (p *PauseHandler[K]) Handle(ctx context.Context) {
 // used when the controller has no good way to tell when the bad state has
 // been resolved (i.e. an external resource is behaving poorly).
 type SelfPauseHandler[K HasStatusConditions] struct {
-	ctrls          *ContextKey[ControlAll]
-	CtxKey         *ContextDefaultingKey[K]
+	ctrls          *typedctx.Key[queue.Interface]
+	CtxKey         *typedctx.DefaultingKey[K]
 	PausedLabelKey string
 	OwnerUID       types.UID
 	Patch          func(ctx context.Context, patch K) error
 	PatchStatus    func(ctx context.Context, patch K) error
 }
 
-func NewSelfPauseHandler[K HasStatusConditions](ctrls *ContextKey[ControlAll],
+func NewSelfPauseHandler[K HasStatusConditions](ctrls *typedctx.Key[queue.Interface],
 	pausedLabelKey string,
-	contextKey *ContextDefaultingKey[K],
+	contextKey *typedctx.DefaultingKey[K],
 	patch, patchStatus func(ctx context.Context, patch K) error,
 ) *SelfPauseHandler[K] {
 	return &SelfPauseHandler[K]{

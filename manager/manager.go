@@ -73,28 +73,16 @@ func (m *Manager) Start(ctx context.Context, controllers ...Controller) error {
 		m.errGCtx = ctx
 
 		// start controllers
-		for _, c := range controllers {
-			c := c
-			m.healthzHandler.AddHealthChecker(controllerhealthz.NamedHealthChecker(c.Name(), c.HealthChecker()))
-			m.errG.Go(func() error {
-				ctx, cancel := context.WithCancel(ctx)
-				m.Lock()
-				m.cancelFuncs[c] = cancel
-				m.Unlock()
-				c.Start(ctx, runtime.GOMAXPROCS(0))
-				return nil
-			})
-			if ctx.Err() != nil {
-				return
-			}
+		if err := m.Go(controllers...); err != nil {
+			return
 		}
+
 		// start health / debug server
 		m.errG.Go(func() error {
 			return m.srv.ListenAndServe()
 		})
 
 		// start broadcaster
-
 		m.errG.Go(func() error {
 			broadcaster.StartStructuredLogging(2)
 			broadcaster.StartRecordingToSink(m.sink)

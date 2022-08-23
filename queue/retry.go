@@ -1,4 +1,4 @@
-package libctrl
+package queue
 
 import (
 	"time"

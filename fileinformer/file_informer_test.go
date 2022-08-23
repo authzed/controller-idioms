@@ -1,4 +1,4 @@
-package libctrl
+package fileinformer
 
 import (
 	"context"
