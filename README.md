@@ -1,8 +1,45 @@
-# ktrllib
+# controller-idioms
 
-`ktrllib` (**k**ubernetes con**tr**o**l**ler **lib**rary) is a library and microframework for building kubernetes controllers and operators.
+[![Go Report Card](https://goreportcard.com/badge/github.com/authzed/controller-idioms)](https://goreportcard.com/report/github.com/authzed/controller-idioms)
+[![Go Documentation](https://pkg.go.dev/badge/github.com/authzed/controller-idioms)](https://pkg.go.dev/github.com/authzed/controller-idioms)
+[![Discord Server](https://img.shields.io/discord/844600078504951838?color=7289da&logo=discord "Discord Server")](https://discord.gg/jTysUaxXzM)
+[![Twitter](https://img.shields.io/twitter/follow/authzed?color=%23179CF0&logo=twitter&style=flat-square&label=@authzed "@authzed on Twitter")](https://twitter.com/authzed)
 
-It is used extensively by [spicedb-operator](https://github.com/authzed/spicedb-operator) and several other closed-source operators.
+controller-idioms is a collection of generic libraries that complement and extend fundamental Kubernetes libraries (e.g. [controller-runtime]) to implement best practices for Kubernetes controllers.
+
+These libraries were originally developed by [Authzed] to build the [SpiceDB Operator] and their internal projects powering [Authzed Dedicated].
+
+[controller-runtime]: https://github.com/kubernetes-sigs/controller-runtime
+[Authzed]: https://authzed.com
+[SpiceDB Operator]: https://github.com/authzed/spicedb-operator
+[Authzed Dedicated]: https://authzed.com/pricing
+
+Available idioms include:
+
+- **[adopt]**: efficiently watch resources the controller doesn't own (e.g. references to a secret or configmap)
+- **[bootstrap]**: install required CRDs and default CRs typically for CD pipelines
+- **[component]**: manage and aggregate resources that are created on behalf of another resource
+- **[fileinformer]**: an InformerFactory that watches local files typically for loading config without restarting
+- **[hash]**: hashing resources to detect modifications
+- **[metrics]**: metrics for resources that implement standard `metav1.Condition` arrays
+- **[pause]**: handler that allows users stop the controller reconciling a particular resource without stopping the controller
+- **[static]**: controller for "static" resources that should always exist on startup
+
+[adopt]: https://pkg.go.dev/github.com/authzed/controller-idioms/adopt
+[bootstrap]: https://pkg.go.dev/github.com/authzed/controller-idioms/bootstrap
+[component]: https://pkg.go.dev/github.com/authzed/controller-idioms/component
+[fileinformer]: https://pkg.go.dev/github.com/authzed/controller-idioms/fileinformer
+[hash]: https://pkg.go.dev/github.com/authzed/controller-idioms/hash
+[metrics]: https://pkg.go.dev/github.com/authzed/controller-idioms/metrics
+[pause]: https://pkg.go.dev/github.com/authzed/controller-idioms/pause
+[static]: https://pkg.go.dev/github.com/authzed/controller-idioms/static
+
+Have questions? Join our [Discord].
+
+Looking to contribute? See [CONTRIBUTING.md].
+
+[Discord]: https://authzed.com/discord
+[CONTRIBUTING.md]: https://github.com/authzed/spicedb/blob/main/CONTRIBUTING.md
 
 ## Overview 
 
@@ -167,21 +204,3 @@ middleware.ChainWithMiddleware(
     c.validate
 ).Handle(ctx)
 ```
-
-## Common Patterns
-
-`ktrllib` also comes with some re-usable components that implement common controller patterns.
-
-- `adopt` - implements a pattern of "adopting" an external resource. 
-This is especially important for dealing with references to types that the operator doesn't directly own (think: a reference to an existing configmap or secret).
-You don't want the controller to watch _all_ secrets in a cluster, so instead you have it watch a label-filtered set. 
-Then an explicitly referenced secret can be labelled to make it appear in the informer cache for the controller.
-- `bootstrap` - implements a pattern of bootstrapping CRDs and "default" CRs.
-This can be valuable if you are deploying an operator via a CD pipeline; it allows the operator to manage the creation of the CRD, followed by a set of default objects of that type, which can allow an operator to make backwards-incompatible changes to an API. 
-It is not something that should generally be used by end-users, but can be helpful for developing operators.
-- `component` - implements a pattern of objects that are created on behalf of another.
-- `fileinformer` - implements an informerfactory that can watch local files; useful for global config that will be mounted as a volume. It allows the operator to respond to config changes without restarting.
-- `hash` - provides utilities for hashing a kube object
-- `metrics` - provides condition metrics for objects that implement standard `metav1.Condition` arrays.
-- `pause` - implements a pause handler that allows a user to tell the controller to stop processing a single object (pause reconciliation) without spinning down the whole controller.
-- `static` - implements a controller for "static" objects; objects that the controller determines on startup should always exist.
