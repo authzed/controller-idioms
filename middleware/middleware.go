@@ -10,17 +10,21 @@ type HandlerMiddleware func(handler.Handler) handler.Handler
 // BuilderMiddleware returns a new (wrapped) Builder given a Builder
 type BuilderMiddleware func(handler.Builder) handler.Builder
 
-// BuilderComposer is a function that composes sets of handler.Builder into
-// one handler.Builder, see `Chain` and `Parallel`.
-type BuilderComposer func(builder ...handler.Builder) handler.Builder
-
 // Middleware operates on BuilderComposer (to wrap all underlying builders)
-type Middleware func(BuilderComposer) BuilderComposer
+type Middleware func(handler.BuilderComposer) handler.BuilderComposer
+
+func ChainWithMiddleware(middleware ...Middleware) handler.BuilderComposer {
+	return WithMiddleware(handler.Chain, middleware...)
+}
+
+func ParallelWithMiddleware(middleware ...Middleware) handler.BuilderComposer {
+	return WithMiddleware(handler.Parallel, middleware...)
+}
 
 // MakeMiddleware generates the corresponding Middleware for HandlerMiddleware
 func MakeMiddleware(w HandlerMiddleware) Middleware {
 	builderWrapper := MakeBuilderMiddleware(w)
-	return func(f BuilderComposer) BuilderComposer {
+	return func(f handler.BuilderComposer) handler.BuilderComposer {
 		return func(builder ...handler.Builder) handler.Builder {
 			wrapped := make([]handler.Builder, 0, len(builder))
 			for _, b := range builder {
@@ -42,7 +46,7 @@ func MakeBuilderMiddleware(w HandlerMiddleware) BuilderMiddleware {
 }
 
 // WithMiddleware returns a new BuilderComposer with all middleware applied
-func WithMiddleware(composer BuilderComposer, middleware ...Middleware) BuilderComposer {
+func WithMiddleware(composer handler.BuilderComposer, middleware ...Middleware) handler.BuilderComposer {
 	out := composer
 	for _, m := range middleware {
 		out = m(out)
