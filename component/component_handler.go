@@ -9,7 +9,7 @@ import (
 	"github.com/authzed/controller-idioms/typedctx"
 )
 
-// ContextHandler fills the value for a Key with the result of
+// ContextHandler fills the value for a context.Key with the result of
 // fetching a component.
 type ContextHandler[K KubeObject] struct {
 	owner     typedctx.MustValueContext[types.NamespacedName]
@@ -18,6 +18,7 @@ type ContextHandler[K KubeObject] struct {
 	next      handler.ContextHandler
 }
 
+// NewComponentContextHandler creates a new ContextHandler.
 func NewComponentContextHandler[K KubeObject](contextKey typedctx.SettableContext[[]K], component *Component[K], owner typedctx.MustValueContext[types.NamespacedName], next handler.ContextHandler) *ContextHandler[K] {
 	return &ContextHandler[K]{
 		owner:     owner,

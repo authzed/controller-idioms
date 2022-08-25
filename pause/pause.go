@@ -1,3 +1,16 @@
+// Package pause implements a controller pattern for temporarily stopping
+// reconciliation of a resource (but not the entire controller).
+//
+// When a specific label is added to the resource, the controller sees it and
+// adds a `Paused` condition to the Status of the object, and refuses to
+// process it further until it is un-paused (by removal of the label).
+//
+// There is also a `SelfPause` handler that can be used if the controller
+// detects a state that it can't easily recover without human intervention.
+// For example, when a required Job has failed after all of its retries, or
+// an external resource (like a Database) is in a bad state, and it is
+// unreasonable to continuously poll for changes. SelfPause should be used
+// sparingly, a controller should almost always prefer to backoff/retry.
 package pause
 
 import (

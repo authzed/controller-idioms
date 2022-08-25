@@ -1,3 +1,8 @@
+// Package metrics implements common prometheus metric collectors.
+//
+// For any resource that implements the standard `metav1.Conditions` array in
+// its status, `ConditionStatusCollector` will report metrics on how many
+// objects have been in certain conditions, and for how long.
 package metrics
 
 import (
@@ -11,6 +16,8 @@ import (
 	"github.com/authzed/controller-idioms/pause"
 )
 
+// ConditionStatusCollector reports condition metrics for any type that
+// implements a metav1.Condition list in the status.
 type ConditionStatusCollector[K pause.HasStatusConditions] struct {
 	metrics.BaseStableCollector
 
@@ -23,6 +30,8 @@ type ConditionStatusCollector[K pause.HasStatusConditions] struct {
 	CollectorErrors       *metrics.Desc
 }
 
+// NewConditionStatusCollector creates a new ConditionStatusCollector, with
+// flags for specifying how to generate the names of the metrics.
 func NewConditionStatusCollector[K pause.HasStatusConditions](namespace string, subsystem string, resourceName string) *ConditionStatusCollector[K] {
 	return &ConditionStatusCollector[K]{
 		ObjectCount: metrics.NewDesc(

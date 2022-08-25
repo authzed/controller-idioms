@@ -1,3 +1,13 @@
+// Package typed converts (dynamic) kube informers, listers, and indexers into
+// typed counterparts via generics.
+//
+// It can be useful to access the informer cache of one controller from another
+// place, so that multiple controllers in the same binary don't need to open
+// separate connections against the kube apiserver and maintain separate caches
+// of the same objects.
+//
+// The `typed` package also provides a `Registry` that synchronizes access to
+// shared informer factories across multiple controllers.
 package typed
 
 import (
@@ -45,6 +55,9 @@ func (k RegistryKey) String() string {
 	return fmt.Sprintf("%s/%s", k.GroupVersionResource.String(), k.FactoryKey)
 }
 
+// Registry is a threadsafe map of DynamicSharedInformerFactory
+// By registering informer factories with the registry, handlers from other
+// controllers can easily access the cached resources held by the informer.
 type Registry struct {
 	sync.RWMutex
 	factories map[any]dynamicinformer.DynamicSharedInformerFactory

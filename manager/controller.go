@@ -1,3 +1,18 @@
+// Package manager implements some basic abstractions around controllers and
+// lifecycling them.
+//
+// `Manager` provides a way to start and stop a collection of controllers
+// together. Controllers can be dynamically added/removed after the manager has
+// started, and it also starts health / debug servers that tie into the
+// health of the underlying controllers.
+//
+// `BasicController` provides default implementations of health and debug
+// servers.
+//
+// `OwnedResourceController` implements the most common pattern for a
+// controller: reconciling a single resource type via a workqueue. On Start,
+// it begins processing objects from the queue, but it doesn't start any
+// informers itself; that is the responsibility of the caller.
 package manager
 
 import (

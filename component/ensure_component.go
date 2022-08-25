@@ -12,10 +12,15 @@ import (
 	"github.com/authzed/controller-idioms/typedctx"
 )
 
+// Annotator is any type that can have annotations added to it. All standard
+// applyconfiguration packages from client-go implement this type. Custom types
+// should implement it themselves.
 type Annotator[T any] interface {
 	WithAnnotations(entries map[string]string) T
 }
 
+// EnsureComponentByHash is a handler.Handler implementation that
+// will create a component object and ensure it has the computed spec.
 type EnsureComponentByHash[K KubeObject, A Annotator[A]] struct {
 	*HashableComponent[K]
 	ctrls        *typedctx.Key[queue.Interface]
@@ -27,6 +32,7 @@ type EnsureComponentByHash[K KubeObject, A Annotator[A]] struct {
 
 var _ handler.ContextHandler = &EnsureComponentByHash[*corev1.Service, *applycorev1.ServiceApplyConfiguration]{}
 
+// NewEnsureComponentByHash returns a new EnsureComponentByHash handler.
 func NewEnsureComponentByHash[K KubeObject, A Annotator[A]](
 	component *HashableComponent[K],
 	owner typedctx.MustValueContext[types.NamespacedName],

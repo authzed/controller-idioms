@@ -1,3 +1,15 @@
+// Package bootstrap implements utilities for boostrapping a kube cluster
+// with resources on controller start.
+//
+// Typically this is used to bootstrap CRDs and CRs (of the types defined by the
+// CRDs) so that a controller can be continuously deployed and still include
+// breaking changes.
+//
+// The bootstrap approach allows the controller to determine when and how to
+// coordinate updates to the apis it manages. It should not typically be used
+// by end-users of an operator, who may be using one or more other tools to
+// manage the deployment of the operator and the resources it manages, and may
+// not wish to grant the privileges required to bootstrap.
 package bootstrap
 
 import (
@@ -20,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// KubeResourceObject is satisfied by any standard kube object.
 type KubeResourceObject interface {
 	metav1.Object
 	runtime.Object

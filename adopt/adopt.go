@@ -39,32 +39,51 @@ import (
 // TODO: a variant where there can only be one owner (label only, fail if labelled for someone else)
 // TODO: a variant where a real client is used to check for existence before applying
 
+// Annotator is any type that can have annotations added to it. All standard
+// applyconfiguration packages from client-go implement this type. Custom types
+// should implement it themselves.
 type Annotator[T any] interface {
 	WithAnnotations(entries map[string]string) T
 }
 
+// Labeler is any type that can have labels added to it. All standard
+// applyconfiguration packages from client-go implement this type. Custom types
+// should implement it themselves.
 type Labeler[T any] interface {
 	WithLabels(entries map[string]string) T
 }
 
+// Adoptable is any type that can be labelled and annotated.
+// Labels are used for including in a watch stream, and annotations are used
+// to indicated ownership by a specific object.
 type Adoptable[T any] interface {
 	Annotator[T]
 	Labeler[T]
 }
 
+// Object is satisfied by any standard kube object.
 type Object interface {
 	comparable
 	runtime.Object
 	metav1.Object
 }
 
+// ApplyFunc should apply a patch defined by the object A with server-side apply
+// and should return the base type. For example a SecretApplyConfiguration would
+// be applied with a client-go Patch call, and return a Secret.
 type ApplyFunc[K Object, A Adoptable[A]] func(ctx context.Context, object A, opts metav1.ApplyOptions) (result K, err error)
 
+// IndexKeyFunc returns the name of an index to use and the value to query it for.
 type IndexKeyFunc func(ctx context.Context) (indexName string, indexValue string)
 
+// Owned is used in object annotations to indicate an object is managed.
 const Owned = "owned"
 
+// AdoptionHandler implements handler.Handler to "adopt" an existing resource
+// under the controller's management. See the package description for more info.
 type AdoptionHandler[K Object, A Adoptable[A]] struct {
+	// OperationsContext allows the adoption handler to control the sync loop
+	// it's called from to deal with transient errors.
 	queue.OperationsContext
 
 	// ControllerFieldManager is the value to use when adopting the object
@@ -88,8 +107,8 @@ type AdoptionHandler[K Object, A Adoptable[A]] struct {
 	// ObjectAdoptedFunc is called when an adoption was performed
 	ObjectAdoptedFunc func(ctx context.Context, obj K)
 
-	// TODO: GetFromCache and Indexer should be replaced with an informer factory that can be
-	//  used to get both
+	// TODO: GetFromCache and Indexer could be replaced with an informerfactory
+	//  that can be used to get both
 
 	// GetFromCache is where we expect to find the object if it is being watched
 	// This will usually be a wrapper around an informer cache `Get`.

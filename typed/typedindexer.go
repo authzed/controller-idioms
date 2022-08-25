@@ -1,7 +1,5 @@
 package typed
 
-// NOTE: this is not used yet, API and implementation may change
-
 import (
 	"fmt"
 
