@@ -16,9 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/authzed/spicedb-operator/pkg/metadata"
 )
 
 type KubeResourceObject interface {
@@ -27,7 +26,7 @@ type KubeResourceObject interface {
 }
 
 // ResourceFromFile bootstraps a CustomResource with the given config file
-func ResourceFromFile[O KubeResourceObject](ctx context.Context, gvr schema.GroupVersionResource, dclient dynamic.Interface, configPath string, lastHash uint64) (uint64, error) {
+func ResourceFromFile[O KubeResourceObject](ctx context.Context, fieldManager string, gvr schema.GroupVersionResource, dclient dynamic.Interface, configPath string, lastHash uint64) (uint64, error) {
 	if len(configPath) <= 0 {
 		klog.V(4).Info("bootstrap file path not specified")
 		return 0, nil
@@ -74,7 +73,7 @@ func ResourceFromFile[O KubeResourceObject](ctx context.Context, gvr schema.Grou
 		_, err = dclient.
 			Resource(gvr).
 			Namespace(objectDef.GetNamespace()).
-			Patch(ctx, objectDef.GetName(), types.ApplyPatchType, data, metadata.PatchForceOwned)
+			Patch(ctx, objectDef.GetName(), types.ApplyPatchType, data, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)})
 		if err != nil {
 			return hash, err
 		}
