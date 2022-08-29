@@ -79,6 +79,7 @@ type MustValueContext[V any] interface {
 // specific type of value V. It mimics the context.Context interface
 type Key[V any] struct{}
 
+// NewKey creates a new Key
 func NewKey[V any]() *Key[V] {
 	return &Key[V]{}
 }
@@ -106,6 +107,7 @@ type DefaultingKey[V comparable] struct {
 	defaultValue V
 }
 
+// WithDefault creates a new DefaultingKey with the given default value
 func WithDefault[V comparable](defaultValue V) *DefaultingKey[V] {
 	return &DefaultingKey[V]{
 		defaultValue: defaultValue,
@@ -150,6 +152,7 @@ type BoxedKey[V any] struct {
 	defaultValue V
 }
 
+// Boxed creates a new BoxedKey with a default value
 func Boxed[V any](defaultValue V) *BoxedKey[V] {
 	return &BoxedKey[V]{
 		defaultValue: defaultValue,
@@ -181,8 +184,10 @@ func (k *BoxedKey[V]) MustValue(ctx context.Context) V {
 	return k.Value(ctx)
 }
 
-// BoxBuilder returns a BoxBuilder that calls Boxed before calling
+// BoxBuilder returns a handler.Builder that calls Boxed before calling
 // the next handler in the chain.
+// This is a shortcut for using Boxed context values in handler chains, i.e.
+// by
 func (k *BoxedKey[V]) BoxBuilder(id handler.Key) handler.Builder {
 	return func(next ...handler.Handler) handler.Handler {
 		return handler.NewHandlerFromFunc(func(ctx context.Context) {

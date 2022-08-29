@@ -1,5 +1,5 @@
 // Package static implements a controller for "static" resources that should
-// always exist on startup. It makes use the `bootstrap` package to ensure
+// always exist on startup. It makes use of the bootstrap package to ensure
 // objects exist.
 package static
 

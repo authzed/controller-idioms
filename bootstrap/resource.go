@@ -1,7 +1,7 @@
 // Package bootstrap implements utilities for boostrapping a kube cluster
 // with resources on controller start.
 //
-// Typically this is used to bootstrap CRDs and CRs (of the types defined by the
+// This is typically used to bootstrap CRDs and CRs (of the types defined by the
 // CRDs) so that a controller can be continuously deployed and still include
 // breaking changes.
 //
@@ -38,7 +38,7 @@ type KubeResourceObject interface {
 	runtime.Object
 }
 
-// ResourceFromFile bootstraps a CustomResource with the given config file
+// ResourceFromFile creates a KubeResourceObject with the given config file
 func ResourceFromFile[O KubeResourceObject](ctx context.Context, fieldManager string, gvr schema.GroupVersionResource, dclient dynamic.Interface, configPath string, lastHash uint64) (uint64, error) {
 	if len(configPath) <= 0 {
 		klog.V(4).Info("bootstrap file path not specified")

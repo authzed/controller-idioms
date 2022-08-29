@@ -94,7 +94,7 @@ func (h Handlers) MustFind(id Key) Handler {
 // not have exactly one Handler.
 func (h Handlers) MustOne() Handler {
 	if len(h) != 1 {
-		panic("more than one handler found")
+		panic("no or more than one handler found")
 	}
 	return h[0]
 }

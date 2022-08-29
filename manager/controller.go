@@ -77,7 +77,7 @@ func (c *BasicController) HealthChecker() controllerhealthz.UnnamedHealthChecker
 
 func (c *BasicController) Start(ctx context.Context, numThreads int) {}
 
-// OwnedResourceController implements Controller that implements our standard
+// OwnedResourceController implements a Controller that implements our standard
 // controller pattern:
 //   - A single GVR is "owned" and watched
 //   - Changes to objects of that type are processed via a workqueue

@@ -7,10 +7,14 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
+// Indexer provides a generically typed interface for cache.Index
+// It assumes the objects are unstructured.Unstructured, as you would get
+// from a dynamic informer.
 type Indexer[K runtime.Object] struct {
 	indexer cache.Indexer
 }
 
+// NewIndexer creates an Indexer from a cache.Indexer
 func NewIndexer[K runtime.Object](indexer cache.Indexer) *Indexer[K] {
 	return &Indexer[K]{indexer: indexer}
 }
@@ -95,6 +99,8 @@ func (t Indexer[K]) AddIndexers(newIndexers cache.Indexers) error {
 	return t.indexer.AddIndexers(newIndexers)
 }
 
+// IndexerListToTypedList is a helper that converts a list of unstructured
+// to a particular type.
 func IndexerListToTypedList[K runtime.Object](objs []any) []K {
 	typedObjs := make([]K, 0, len(objs))
 	for _, obj := range objs {

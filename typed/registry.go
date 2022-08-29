@@ -39,11 +39,13 @@ func NewFactoryKey(controllerName, clusterName, id string) FactoryKey {
 	return FactoryKey(fmt.Sprintf("%s/%s/%s", controllerName, clusterName, id))
 }
 
+// RegistryKey identifies a specific GVR within a factory provided by a Registry
 type RegistryKey struct {
 	schema.GroupVersionResource
 	FactoryKey
 }
 
+// NewRegistryKey creates a RegistryKey from a FactoryKey
 func NewRegistryKey(key FactoryKey, gvr schema.GroupVersionResource) RegistryKey {
 	return RegistryKey{
 		GroupVersionResource: gvr,
@@ -63,6 +65,7 @@ type Registry struct {
 	factories map[any]dynamicinformer.DynamicSharedInformerFactory
 }
 
+// NewRegistry returns a new, empty Registry
 func NewRegistry() *Registry {
 	return &Registry{
 		factories: make(map[any]dynamicinformer.DynamicSharedInformerFactory),
@@ -87,10 +90,12 @@ func (r *Registry) NewFilteredDynamicSharedInformerFactory(key FactoryKey, clien
 	return r.factories[key], nil
 }
 
+// ListerFor returns a typed Lister from a Registry
 func ListerFor[K runtime.Object](r *Registry, key RegistryKey) *Lister[K] {
 	return NewLister[K](r.ListerFor(key))
 }
 
+// IndexerFor returns a typed Indexer from a Registry
 func IndexerFor[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
 	return NewIndexer[K](r.InformerFor(key).GetIndexer())
 }
