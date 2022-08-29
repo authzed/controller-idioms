@@ -10,6 +10,9 @@ import (
 	"github.com/authzed/controller-idioms/handler"
 )
 
+// NewSyncID returns a random string of length `size` that can be added to log
+// messages. This is useful for identifying which logs came from which iteration
+// of a reconciliation loop in a controller.
 func NewSyncID(size uint8) string {
 	buf := make([]byte, size)
 	rand.Read(buf) // nolint
@@ -17,10 +20,14 @@ func NewSyncID(size uint8) string {
 	return str[:size]
 }
 
+// NewHandlerLoggingMiddleware creates a new HandlerLoggingMiddleware for a
+// particular klog log level.
 func NewHandlerLoggingMiddleware(level int) Middleware {
 	return MakeMiddleware(HandlerLoggingMiddleware(level))
 }
 
+// HandlerLoggingMiddleware logs on entry to a handler. It uses the klog logger
+// found in the context.
 func HandlerLoggingMiddleware(level int) HandlerMiddleware {
 	return func(in handler.Handler) handler.Handler {
 		return handler.NewHandlerFromFunc(func(ctx context.Context) {

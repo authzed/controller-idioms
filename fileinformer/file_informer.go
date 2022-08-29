@@ -1,3 +1,5 @@
+// Package fileinformer implements a kube-style Informer and InformerFactory
+// that can be used to watch files instead of kube apis.
 package fileinformer
 
 import (
@@ -15,11 +17,14 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// FileGroupVersion is a sythetic GroupVersion that the informers use.
 var FileGroupVersion = schema.GroupVersion{
 	Group:   "//LocalFile",
 	Version: "v1",
 }
 
+// Factory implements dynamicinformer.DynamicSharedInformerFactory, but for
+// starting and managing FileInformers.
 type Factory struct {
 	sync.Mutex
 	informers map[schema.GroupVersionResource]informers.GenericInformer
@@ -30,6 +35,7 @@ type Factory struct {
 
 var _ dynamicinformer.DynamicSharedInformerFactory = &Factory{}
 
+// NewFileInformerFactory creates a new Factory.
 func NewFileInformerFactory() (*Factory, error) {
 	return &Factory{
 		informers:        make(map[schema.GroupVersionResource]informers.GenericInformer),
@@ -37,6 +43,7 @@ func NewFileInformerFactory() (*Factory, error) {
 	}, nil
 }
 
+// Start starts watching the files defined byt the informers.
 func (f *Factory) Start(stopCh <-chan struct{}) {
 	f.Lock()
 	defer f.Unlock()
@@ -49,6 +56,7 @@ func (f *Factory) Start(stopCh <-chan struct{}) {
 	}
 }
 
+// ForResource will create an informer for a specific file.
 func (f *Factory) ForResource(gvr schema.GroupVersionResource) informers.GenericInformer {
 	f.Lock()
 	defer f.Unlock()
@@ -72,6 +80,7 @@ func (f *Factory) ForResource(gvr schema.GroupVersionResource) informers.Generic
 	return informer
 }
 
+// WaitForCacheSync waits until all files in the informers have been synced once.
 func (f *Factory) WaitForCacheSync(stopCh <-chan struct{}) map[schema.GroupVersionResource]bool {
 	infs := func() map[schema.GroupVersionResource]cache.SharedIndexInformer {
 		f.Lock()
@@ -93,6 +102,7 @@ func (f *Factory) WaitForCacheSync(stopCh <-chan struct{}) map[schema.GroupVersi
 	return res
 }
 
+// FileInformer is an informer that watches files instead of the kube api.
 type FileInformer struct {
 	fileName string
 	watcher  *fsnotify.Watcher
@@ -101,6 +111,7 @@ type FileInformer struct {
 
 var _ informers.GenericInformer = &FileInformer{}
 
+// NewFileInformer returns a new FileInformer.
 func NewFileInformer(watcher *fsnotify.Watcher, gvr schema.GroupVersionResource) (*FileInformer, error) {
 	return &FileInformer{
 		fileName: gvr.Resource,
@@ -289,6 +300,11 @@ func (f *FileSharedIndexInformer) AddIndexers(indexers cache.Indexers) error {
 }
 
 func (f *FileSharedIndexInformer) GetIndexer() cache.Indexer {
+	// TODO implement me
+	panic("implement me")
+}
+
+func (f *FileSharedIndexInformer) SetTransform(handler cache.TransformFunc) error {
 	// TODO implement me
 	panic("implement me")
 }

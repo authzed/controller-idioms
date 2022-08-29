@@ -1,3 +1,6 @@
+// Package static implements a controller for "static" resources that should
+// always exist on startup. It makes use of the bootstrap package to ensure
+// objects exist.
 package static
 
 import (
@@ -52,7 +55,7 @@ func (c *Controller[K]) Start(ctx context.Context, numThreads int) {
 }
 
 func (c *Controller[K]) handleStaticResource(ctx context.Context) {
-	hash, err := bootstrap.ResourceFromFile[K](ctx, c.gvr, c.client, c.path, c.lastStaticHash.Load())
+	hash, err := bootstrap.ResourceFromFile[K](ctx, c.Name(), c.gvr, c.client, c.path, c.lastStaticHash.Load())
 	if err != nil {
 		utilruntime.HandleError(err)
 		return

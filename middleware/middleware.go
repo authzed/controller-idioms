@@ -1,3 +1,9 @@
+// Package middleware supports building middleware for handlers.
+//
+// In the context of handlers, middleware runs in between each handler.
+//
+// Logging middleware can be used to automatically log entry into a specific
+// handler.
 package middleware
 
 import (

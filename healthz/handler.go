@@ -1,3 +1,5 @@
+// Package healthz is modified from k8s.io/controller-manager/pkg/healthz to
+// permit removing healthchecks.
 package healthz
 
 import (
@@ -8,9 +10,6 @@ import (
 	"k8s.io/apiserver/pkg/server/healthz"
 	"k8s.io/apiserver/pkg/server/mux"
 )
-
-// NOTE: this is a modified version of k8s.io/controller-manager/pkg/healthz/handler.go
-// that permits removing healthchecks
 
 // MutableHealthzHandler returns a http.Handler that handles "/healthz"
 // following the standard healthz mechanism.

@@ -1,3 +1,19 @@
+// Package queue provides helpers for working with client-go's `workqueues`.
+//
+// `queue.OperationsContext` can be used from within a `Handler` to control
+// the behavior of the queue that has called the handler.
+//
+// The queue operations are:
+//
+// - Done (stop processing the current key)
+// - Requeue (requeue the current key)
+// - RequeueAfter (wait for some period of time before requeuing the current key)
+// - ReqeueueErr (record an error and requeue)
+// - RequeueAPIError (requeue after waiting according to the priority and fairness response from the apiserver)
+//
+// If calling these controls from a handler, it's important to `return`
+// immediately so that the handler does not continue processing a key that
+// the queue thinks has stopped.
 package queue
 
 import (
@@ -11,10 +27,12 @@ import (
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
+// OperationsContext is like Interface, but fetches the object from a context.
 type OperationsContext struct {
 	*typedctx.Key[Interface]
 }
 
+// NewQueueOperationsCtx returns a new OperationsContext
 func NewQueueOperationsCtx() OperationsContext {
 	return OperationsContext{}
 }
@@ -48,6 +66,8 @@ func NewOperations(done func(), requeueAfter func(time.Duration)) *Operations {
 	}
 }
 
+// Interface is the standard queue control interface
+//
 //counterfeiter:generate -o ./fake . Interface
 type Interface interface {
 	Done()
@@ -57,6 +77,8 @@ type Interface interface {
 	RequeueAPIErr(err error)
 }
 
+// Operations deals with the current queue key and provides controls for
+// requeueing or stopping reconciliation.
 type Operations struct {
 	done         func()
 	requeueAfter func(duration time.Duration)

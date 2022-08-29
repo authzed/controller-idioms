@@ -147,9 +147,9 @@ secrets, err := secretIndexer.ByIndex("my-index-name", "my-index-value")
 
 ### Controllers and Managers
 
-The `manager` package provides an optional lightweight controller `Manager` abstraction (similar to kubernetes controller manager, or the manager from controller runtime). It also provides a simple `Controller` abstraction and some basic implementations. Both are optional, `ktrllib` can be used without these.
+The `manager` package provides an optional lightweight controller `Manager` abstraction (similar to kubernetes controller manager, or the manager from controller runtime). It also provides a simple `Controller` abstraction and some basic implementations. 
 
-The rest of `ktrllib` can be used without using these if you are already using another solution.
+The rest of `controller-idioms` can be used without using these if you are already using another solution.
 
 #### `Manager`
 

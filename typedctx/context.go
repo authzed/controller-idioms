@@ -1,3 +1,59 @@
+// Package typedctx provides generic helpers for storing / retrieving values
+// from a `context.Context`.
+//
+// Breaking a controller down into small pieces with `Handler`s means that each
+// piece either needs to re-calculate results from other stages or fetch the
+// previously computed result from `context`.
+//
+//	    var CtxExpensiveObject = typedctx.NewKey[ExpensiveComputation]()
+//
+//		func (h *ComputeHandler) Handle(ctx context.Context) {
+//		   ctx = CtxExpensiveObject.WithValue(ctx, myComputedExpensiveObject)
+//		}
+//
+//		func (h *UseHandler) Handle(ctx context.Context) {
+//		   precomputedExpensiveObject = CtxExpensiveObject.MustValue(ctx)
+//			// do something with object
+//		}
+//
+// `Handlers` are typically chained in a way that preserves the context between
+// handlers, but not always.
+//
+// For example:
+//
+//	    var CtxExpensiveObject = typedctx.NewKey[ExpensiveComputation]()
+//
+//		func (h *ComputeHandler) Handle(ctx context.Context) {
+//		   ctx = CtxExpensiveObject.WithValue(ctx, myComputedExpensiveObject)
+//		}
+//
+//		func (h *DecorateHandler) Handle(ctx context.Context) {
+//			ComputeHandler{}.Handle(ctx)
+//
+//		   // this fails, because the ctx passed into the wrapped handler isn't passed back out
+//		   CtxExpensiveObject.MustValue(ctx)
+//		}
+//
+// To deal with these cases, `typedctx` provides a `Boxed` context type that
+// instead stores a pointer to the object, with additional helpers for making a
+// "space" for the pointer to be filled in later.
+//
+//	    var CtxExpensiveObject = typedctx.Boxed[ExpensiveComputation](nil)
+//
+//		func (h *ComputeHandler) Handle(ctx context.Context) {
+//		   ctx = CtxExpensiveObject.WithValue(ctx, myComputedExpensiveObject)
+//		}
+//
+//		func (h *DecorateHandler) Handle(ctx context.Context) {
+//			// adds an empty pointer
+//			ctx = CtxExpensiveObject.WithBox(ctx)
+//
+//			// fills in the pointer - note that the implementation of ComputeHandler didn't change
+//			ComputeHandler{}.Handle(ctx)
+//
+//			// now this succeeds, and returns the unboxed value
+//			CtxExpensiveObject.MustValue(ctx)
+//		}
 package typedctx
 
 import (
@@ -23,6 +79,7 @@ type MustValueContext[V any] interface {
 // specific type of value V. It mimics the context.Context interface
 type Key[V any] struct{}
 
+// NewKey creates a new Key
 func NewKey[V any]() *Key[V] {
 	return &Key[V]{}
 }
@@ -50,6 +107,7 @@ type DefaultingKey[V comparable] struct {
 	defaultValue V
 }
 
+// WithDefault creates a new DefaultingKey with the given default value
 func WithDefault[V comparable](defaultValue V) *DefaultingKey[V] {
 	return &DefaultingKey[V]{
 		defaultValue: defaultValue,
@@ -94,6 +152,7 @@ type BoxedKey[V any] struct {
 	defaultValue V
 }
 
+// Boxed creates a new BoxedKey with a default value
 func Boxed[V any](defaultValue V) *BoxedKey[V] {
 	return &BoxedKey[V]{
 		defaultValue: defaultValue,
@@ -125,8 +184,10 @@ func (k *BoxedKey[V]) MustValue(ctx context.Context) V {
 	return k.Value(ctx)
 }
 
-// BoxBuilder returns a BoxBuilder that calls Boxed before calling
+// BoxBuilder returns a handler.Builder that calls Boxed before calling
 // the next handler in the chain.
+// This is a shortcut for using Boxed context values in handler chains, i.e.
+// by
 func (k *BoxedKey[V]) BoxBuilder(id handler.Key) handler.Builder {
 	return func(next ...handler.Handler) handler.Handler {
 		return handler.NewHandlerFromFunc(func(ctx context.Context) {

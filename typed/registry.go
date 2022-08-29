@@ -1,3 +1,13 @@
+// Package typed converts (dynamic) kube informers, listers, and indexers into
+// typed counterparts via generics.
+//
+// It can be useful to access the informer cache of one controller from another
+// place, so that multiple controllers in the same binary don't need to open
+// separate connections against the kube apiserver and maintain separate caches
+// of the same objects.
+//
+// The `typed` package also provides a `Registry` that synchronizes access to
+// shared informer factories across multiple controllers.
 package typed
 
 import (
@@ -29,11 +39,13 @@ func NewFactoryKey(controllerName, clusterName, id string) FactoryKey {
 	return FactoryKey(fmt.Sprintf("%s/%s/%s", controllerName, clusterName, id))
 }
 
+// RegistryKey identifies a specific GVR within a factory provided by a Registry
 type RegistryKey struct {
 	schema.GroupVersionResource
 	FactoryKey
 }
 
+// NewRegistryKey creates a RegistryKey from a FactoryKey
 func NewRegistryKey(key FactoryKey, gvr schema.GroupVersionResource) RegistryKey {
 	return RegistryKey{
 		GroupVersionResource: gvr,
@@ -45,11 +57,15 @@ func (k RegistryKey) String() string {
 	return fmt.Sprintf("%s/%s", k.GroupVersionResource.String(), k.FactoryKey)
 }
 
+// Registry is a threadsafe map of DynamicSharedInformerFactory
+// By registering informer factories with the registry, handlers from other
+// controllers can easily access the cached resources held by the informer.
 type Registry struct {
 	sync.RWMutex
 	factories map[any]dynamicinformer.DynamicSharedInformerFactory
 }
 
+// NewRegistry returns a new, empty Registry
 func NewRegistry() *Registry {
 	return &Registry{
 		factories: make(map[any]dynamicinformer.DynamicSharedInformerFactory),
@@ -74,10 +90,12 @@ func (r *Registry) NewFilteredDynamicSharedInformerFactory(key FactoryKey, clien
 	return r.factories[key], nil
 }
 
+// ListerFor returns a typed Lister from a Registry
 func ListerFor[K runtime.Object](r *Registry, key RegistryKey) *Lister[K] {
 	return NewLister[K](r.ListerFor(key))
 }
 
+// IndexerFor returns a typed Indexer from a Registry
 func IndexerFor[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
 	return NewIndexer[K](r.InformerFor(key).GetIndexer())
 }

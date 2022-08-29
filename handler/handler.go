@@ -1,12 +1,5 @@
-package handler
-
-import (
-	"context"
-	"fmt"
-)
-
-// This package contains the basic Handler units used to compose reconciliation
-// loops for a controller.
+// Package handler contains the basic Handler units used to compose
+// reconciliation loops for a controller.
 //
 // You write functions or types that implement the ContextHandler interface, and
 // then compose them via Handlers and Builders.
@@ -17,6 +10,12 @@ import (
 // behavior respectively), so each type has methods to convert between them.
 //
 // See other files for helpers to compose or wrap handlers and builders.
+package handler
+
+import (
+	"context"
+	"fmt"
+)
 
 // ContextHandler is the interface for a "chunk" of reconciliation. It either
 // returns, often by adjusting the current key's place in the queue (i.e. via
@@ -95,7 +94,7 @@ func (h Handlers) MustFind(id Key) Handler {
 // not have exactly one Handler.
 func (h Handlers) MustOne() Handler {
 	if len(h) != 1 {
-		panic("more than one handler found")
+		panic("no or more than one handler found")
 	}
 	return h[0]
 }
