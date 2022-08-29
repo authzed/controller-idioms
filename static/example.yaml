@@ -1,8 +1,9 @@
-apiVersion: v1
-kind: Secret
+---
+apiVersion: "v1"
+kind: "Secret"
 metadata:
-  namespace: test
-  name: example
-type: Opaque
+  namespace: "test"
+  name: "example"
+type: "Opaque"
 data:
-  required: data
+  required: "data"

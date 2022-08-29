@@ -21,7 +21,9 @@ func ExampleController() {
 
 	secretGVR := corev1.SchemeGroupVersion.WithResource("secrets")
 	scheme := runtime.NewScheme()
-	corev1.AddToScheme(scheme)
+	if err := corev1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
 	scheme.AddKnownTypes(corev1.SchemeGroupVersion, &corev1.Secret{})
 	client := secretApplyPatchHandlingFakeClient(scheme)
 

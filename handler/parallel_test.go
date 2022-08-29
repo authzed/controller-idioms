@@ -1,10 +1,19 @@
 package handler
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 func ExampleParallel() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// slow down the first stage to get a deterministic output
+	slowFirstStage := func(next ...Handler) Handler {
+		time.Sleep(5 * time.Millisecond)
+		return firstStageBuilder(next...)
+	}
 
 	// These handlers run in parallel, so their contexts are independent
 	// i.e. FirstStage.next and SecondStage.next are both NoopHandlers
@@ -12,7 +21,7 @@ func ExampleParallel() {
 	// typedctx.Boxed contexts so that the parallel steps can "fill in"
 	// a predefined space.
 	Parallel(
-		firstStageBuilder,
+		slowFirstStage,
 		secondStageBuilder,
 	).Handler("firstAndSecond").Handle(ctx)
 

@@ -85,3 +85,17 @@ go get github.com/org/newdependency@version
 ```
 
 Continuous integration enforces that `go mod tidy` has been run.
+
+### Codegen and Linting
+
+To run all code generators:
+
+```sh
+go generate ./... 
+```
+
+To run all tooling, including linters:
+
+```sh
+go generate -tags tools ./...
+```

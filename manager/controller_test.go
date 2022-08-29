@@ -34,6 +34,6 @@ func ExampleNewOwnedResourceController() {
 	mgr := NewManager(ctrlmanageropts.RecommendedDebuggingOptions().DebuggingConfiguration, ":", broadcaster, eventSink)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Millisecond)
 	defer cancel()
-	mgr.Start(ctx, controller)
+	_ = mgr.Start(ctx, controller)
 	// Output:
 }

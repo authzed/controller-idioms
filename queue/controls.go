@@ -68,7 +68,7 @@ func NewOperations(done func(), requeueAfter func(time.Duration)) *Operations {
 
 // Interface is the standard queue control interface
 //
-//counterfeiter:generate -o ./fake . Interface
+//counterfeiter:generate -o ./fake/zz_generated.go . Interface
 type Interface interface {
 	Done()
 	RequeueAfter(duration time.Duration)

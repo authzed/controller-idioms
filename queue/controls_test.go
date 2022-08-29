@@ -31,7 +31,6 @@ func ExampleNewOperations() {
 	handler.NewHandlerFromFunc(func(ctx context.Context) {
 		// do some work
 		operations.Done()
-		return
 	}, "example").Handle(ctx)
 	fmt.Println(queue.Len())
 
@@ -64,7 +63,6 @@ func ExampleNewQueueOperationsCtx() {
 	handler.NewHandlerFromFunc(func(ctx context.Context) {
 		// do some work
 		CtxQueue.Done()
-		return
 	}, "example").Handle(ctx)
 
 	fmt.Println(queue.Len())

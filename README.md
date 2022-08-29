@@ -41,7 +41,7 @@ Looking to contribute? See [CONTRIBUTING.md].
 [Discord]: https://authzed.com/discord
 [CONTRIBUTING.md]: https://github.com/authzed/spicedb/blob/main/CONTRIBUTING.md
 
-## Overview 
+## Overview
 
 ### Handlers
 
@@ -70,7 +70,7 @@ func mainControlLoop(ctx context.Context) {
 ```
 
 The `handler` package contains utilities for building, composing, and decorating handlers, and for building large state machines with them.
-See the [docs]() for more details.
+See the [docs](https://pkg.go.dev/github.com/authzed/controller-idioms/handler) for more details.
 
 Handlers take some inspiration from [statecharts](https://statecharts.dev/) to deal with the complexity of writing and maintaining controllers, while staying close to golang idioms.
 
@@ -96,6 +96,7 @@ func (h *UseHandler) Handle(ctx context.Context) {
 `Handlers` are typically chained in a way that preserves the context between handlers, but not always.
 
 For example:
+
 ```go
 var CtxExpensiveObject = typedctx.NewKey[ExpensiveComputation]()
 
@@ -147,7 +148,7 @@ secrets, err := secretIndexer.ByIndex("my-index-name", "my-index-value")
 
 ### Controllers and Managers
 
-The `manager` package provides an optional lightweight controller `Manager` abstraction (similar to kubernetes controller manager, or the manager from controller runtime). It also provides a simple `Controller` abstraction and some basic implementations. 
+The `manager` package provides an optional lightweight controller `Manager` abstraction (similar to kubernetes controller manager, or the manager from controller runtime). It also provides a simple `Controller` abstraction and some basic implementations.
 
 The rest of `controller-idioms` can be used without using these if you are already using another solution.
 
@@ -189,7 +190,6 @@ The queue operations are:
 - RequeueAPIError (requeue after waiting according to the priority and fairness response from the apiserver)
 
 If calling these controls from a handler, it's important to `return` immediately so that the handler does not continue processing a key that the queue thinks has stopped.
-
 
 ### Middleware
 
