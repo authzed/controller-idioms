@@ -21,13 +21,18 @@ func ExampleResourceFromFile() {
 
 	secretGVR := corev1.SchemeGroupVersion.WithResource("secrets")
 	scheme := runtime.NewScheme()
-	corev1.AddToScheme(scheme)
+	if err := corev1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
 	scheme.AddKnownTypes(corev1.SchemeGroupVersion, &corev1.Secret{})
 	client := secretApplyPatchHandlingFakeClient(scheme)
 
 	// create the object from the file
 	// the example is a secret, but it could be any built-in or CRD-defined type
-	ResourceFromFile[*corev1.Secret](ctx, "bootstrapped-secret", secretGVR, client, "./example.yaml", 0)
+	_, err := ResourceFromFile[*corev1.Secret](ctx, "bootstrapped-secret", secretGVR, client, "./example.yaml", 0)
+	if err != nil {
+		panic(err)
+	}
 
 	for {
 		secret, err := client.Resource(secretGVR).Namespace("test").Get(ctx, "example", metav1.GetOptions{})

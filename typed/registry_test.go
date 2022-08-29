@@ -24,7 +24,9 @@ func ExampleRegistry() {
 		},
 	}}
 	scheme := runtime.NewScheme()
-	corev1.AddToScheme(scheme)
+	if err := corev1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
 	client := fake.NewSimpleDynamicClient(scheme, &secret)
 	registry := NewRegistry()
 
@@ -67,7 +69,9 @@ func ExampleListerFor() {
 		},
 	}}
 	scheme := runtime.NewScheme()
-	corev1.AddToScheme(scheme)
+	if err := corev1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
 	client := fake.NewSimpleDynamicClient(scheme, &secret)
 	registry := NewRegistry()
 
@@ -105,7 +109,9 @@ func ExampleIndexerFor() {
 		},
 	}}
 	scheme := runtime.NewScheme()
-	corev1.AddToScheme(scheme)
+	if err := corev1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
 	client := fake.NewSimpleDynamicClient(scheme, &secret)
 	registry := NewRegistry()
 
@@ -123,11 +129,13 @@ func ExampleIndexerFor() {
 	// add an index that indexes all objects with a constant value
 	const indexName = "ExampleIndex"
 	const constantIndexValue = "indexVal"
-	informerFactory.ForResource(secretGVR).Informer().AddIndexers(map[string]cache.IndexFunc{
+	if err := informerFactory.ForResource(secretGVR).Informer().AddIndexers(map[string]cache.IndexFunc{
 		indexName: func(obj interface{}) ([]string, error) {
 			return []string{constantIndexValue}, nil
 		},
-	})
+	}); err != nil {
+		panic(err)
+	}
 
 	informerFactory.Start(ctx.Done())
 	informerFactory.WaitForCacheSync(ctx.Done())

@@ -10,6 +10,6 @@ import (
 var crdFS embed.FS
 
 func ExampleCRD() {
-	CRD(&rest.Config{}, crdFS, "example")
+	_ = CRD(&rest.Config{}, crdFS, "example")
 	// Output:
 }

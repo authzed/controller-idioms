@@ -11,7 +11,7 @@ func ExampleKey() {
 	type ExpensiveComputation struct {
 		result string
 	}
-	var CtxExpensiveObject = NewKey[*ExpensiveComputation]()
+	CtxExpensiveObject := NewKey[*ExpensiveComputation]()
 
 	useHandler := handler.NewHandlerFromFunc(func(ctx context.Context) {
 		// fetch the computed value after the computation
@@ -22,7 +22,6 @@ func ExampleKey() {
 	computeHandler := handler.NewHandlerFromFunc(func(ctx context.Context) {
 		myComputedExpensiveObject := ExpensiveComputation{result: "computed"}
 		ctx = CtxExpensiveObject.WithValue(ctx, &myComputedExpensiveObject)
-
 		useHandler.Handle(ctx)
 	}, "compute")
 
@@ -35,7 +34,7 @@ func ExampleWithDefault() {
 	type ExpensiveComputation struct {
 		result string
 	}
-	var CtxExpensiveObject = WithDefault[*ExpensiveComputation](&ExpensiveComputation{result: "pending"})
+	CtxExpensiveObject := WithDefault[*ExpensiveComputation](&ExpensiveComputation{result: "pending"})
 
 	useHandler := handler.NewHandlerFromFunc(func(ctx context.Context) {
 		// fetch the computed value after the computation
@@ -63,12 +62,12 @@ func ExampleBoxed() {
 	type ExpensiveComputation struct {
 		result string
 	}
-	var CtxExpensiveObject = Boxed[*ExpensiveComputation](nil)
+	CtxExpensiveObject := Boxed[*ExpensiveComputation](nil)
 
 	// the compute handler performs some computation that we wish to re-use
 	computeHandler := handler.NewHandlerFromFunc(func(ctx context.Context) {
 		myComputedExpensiveObject := ExpensiveComputation{result: "computed"}
-		ctx = CtxExpensiveObject.WithValue(ctx, &myComputedExpensiveObject)
+		CtxExpensiveObject.WithValue(ctx, &myComputedExpensiveObject)
 	}, "compute")
 
 	decorateHandler := handler.NewHandlerFromFunc(func(ctx context.Context) {

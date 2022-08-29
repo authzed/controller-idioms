@@ -79,20 +79,23 @@ func TestEnsureServiceHandler(t *testing.T) {
 					},
 					Annotations: map[string]string{
 						hashKey: "n5d8h56h6dhc7h96h8h545h96q",
-					}}},
+					},
+				}},
 			},
 		},
 		{
 			name: "deletes extra services if a matching service exists",
-			existingServices: []runtime.Object{&corev1.Service{ObjectMeta: metav1.ObjectMeta{
-				Name:      "test",
-				Namespace: "test",
-				Labels: map[string]string{
-					"example.com/component": "the-main-service-component",
+			existingServices: []runtime.Object{&corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+					Labels: map[string]string{
+						"example.com/component": "the-main-service-component",
+					},
+					Annotations: map[string]string{
+						hashKey: "n5d8h56h6dhc7h96h8h545h96q",
+					},
 				},
-				Annotations: map[string]string{
-					hashKey: "n5d8h56h6dhc7h96h8h545h96q",
-				}},
 			}, &corev1.Service{ObjectMeta: metav1.ObjectMeta{
 				Name:      "extra",
 				Namespace: "test",
@@ -108,7 +111,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			ctrls := &fake.FakeOperations{}
+			ctrls := &fake.FakeInterface{}
 			applyCalled := false
 			deleteCalled := false
 

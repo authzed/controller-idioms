@@ -300,7 +300,7 @@ func TestSecretAdopterHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctrls := &fake.FakeOperations{}
+			ctrls := &fake.FakeInterface{}
 			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{IndexName: OwnerKeysFromMeta(OwnerAnnotationPrefix)})
 			IndexAddUnstructured(t, indexer, tt.secretsInIndex)
 
@@ -377,7 +377,6 @@ func NewSecretAdoptionHandler(recorder record.EventRecorder, getFromCache func(c
 }
 
 func ExampleAdoptionHandler_Handle() {
-
 }
 
 func ExpectEvents(t *testing.T, recorder *record.FakeRecorder, expected []string) {
