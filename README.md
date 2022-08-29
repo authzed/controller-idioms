@@ -39,7 +39,7 @@ Have questions? Join our [Discord].
 Looking to contribute? See [CONTRIBUTING.md].
 
 [Discord]: https://authzed.com/discord
-[CONTRIBUTING.md]: https://github.com/authzed/spicedb/blob/main/CONTRIBUTING.md
+[CONTRIBUTING.md]: https://github.com/authzed/controller-idioms/blob/main/CONTRIBUTING.md
 
 ## Overview
 
