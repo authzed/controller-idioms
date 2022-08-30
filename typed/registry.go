@@ -72,6 +72,9 @@ func NewRegistry() *Registry {
 	}
 }
 
+// MustNewFilteredDynamicSharedInformerFactory creates a new SharedInformerFactory
+// and registers it under the given RegistryKey. It panics if there is already
+// an entry with that key.
 func (r *Registry) MustNewFilteredDynamicSharedInformerFactory(key FactoryKey, client dynamic.Interface, defaultResync time.Duration, namespace string, tweakListOptions dynamicinformer.TweakListOptionsFunc) dynamicinformer.DynamicSharedInformerFactory {
 	factory, err := r.NewFilteredDynamicSharedInformerFactory(key, client, defaultResync, namespace, tweakListOptions)
 	if err != nil {
@@ -80,6 +83,8 @@ func (r *Registry) MustNewFilteredDynamicSharedInformerFactory(key FactoryKey, c
 	return factory
 }
 
+// NewFilteredDynamicSharedInformerFactory creates a new SharedInformerFactory
+// and registers it under the given RegistryKey
 func (r *Registry) NewFilteredDynamicSharedInformerFactory(key FactoryKey, client dynamic.Interface, defaultResync time.Duration, namespace string, tweakListOptions dynamicinformer.TweakListOptionsFunc) (dynamicinformer.DynamicSharedInformerFactory, error) {
 	r.Lock()
 	defer r.Unlock()
@@ -100,12 +105,23 @@ func IndexerFor[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
 	return NewIndexer[K](r.InformerFor(key).GetIndexer())
 }
 
+// Add adds a factory to the registry under the given RegistryKey
 func (r *Registry) Add(key RegistryKey, factory dynamicinformer.DynamicSharedInformerFactory) {
 	r.Lock()
 	defer r.Unlock()
 	r.factories[key] = factory
 }
 
+// Remove removes a factory from the registry. Note that it does not stop any
+// informers that were started via the factory; they should be stopped via
+// context cancellation.
+func (r *Registry) Remove(key RegistryKey, factory dynamicinformer.DynamicSharedInformerFactory) {
+	r.Lock()
+	defer r.Unlock()
+	delete(r.factories, key)
+}
+
+// InformerFactoryFor returns GVR-specific InformerFactory from the Registry.
 func (r *Registry) InformerFactoryFor(key RegistryKey) informers.GenericInformer {
 	r.RLock()
 	defer r.RUnlock()
@@ -116,14 +132,17 @@ func (r *Registry) InformerFactoryFor(key RegistryKey) informers.GenericInformer
 	return factory.ForResource(key.GroupVersionResource)
 }
 
+// ListerFor returns the GVR-specific Lister from the Registry
 func (r *Registry) ListerFor(key RegistryKey) cache.GenericLister {
 	return r.InformerFactoryFor(key).Lister()
 }
 
+// InformerFor returns the GVR-specific Informer from the Registry
 func (r *Registry) InformerFor(key RegistryKey) cache.SharedIndexInformer {
 	return r.InformerFactoryFor(key).Informer()
 }
 
+// IndexerFor returns the GVR-specific Indexer from the Registry
 func (r *Registry) IndexerFor(key RegistryKey) cache.Indexer {
 	return r.InformerFactoryFor(key).Informer().GetIndexer()
 }
