@@ -62,15 +62,19 @@ func NewManager(debugConfig *componentconfig.DebuggingConfiguration, address str
 // health / debug endpoints for them. It stops when the context is cancelled.
 // It will only have an effect the first time it is called.
 func (m *Manager) Start(ctx context.Context, controllers ...Controller) error {
+	m.RLock()
 	if m.errG != nil {
 		return fmt.Errorf("manager already started")
 	}
+	m.RUnlock()
 
 	broadcaster := record.NewBroadcaster()
 
 	m.once.Do(func() {
+		m.Lock()
 		m.errG, ctx = errgroup.WithContext(ctx)
 		m.errGCtx = ctx
+		m.Unlock()
 
 		// start controllers
 		if err := m.Go(controllers...); err != nil {
@@ -105,17 +109,19 @@ func (m *Manager) Start(ctx context.Context, controllers ...Controller) error {
 
 // Go adds controllers into the existing manager's errgroup
 func (m *Manager) Go(controllers ...Controller) error {
-	if m.errG == nil {
+	m.RLock()
+	errG := m.errG
+	if errG == nil {
 		return fmt.Errorf("cannot add controllers to an unstarted manager")
 	}
-
 	ctx := m.errGCtx
+	m.RUnlock()
 
 	// start newly added controllers
 	for _, c := range controllers {
 		c := c
 		m.healthzHandler.AddHealthChecker(controllerhealthz.NamedHealthChecker(c.Name(), c.HealthChecker()))
-		m.errG.Go(func() error {
+		errG.Go(func() error {
 			ctx, cancel := context.WithCancel(ctx)
 			m.Lock()
 			m.cancelFuncs[c] = cancel
