@@ -163,8 +163,7 @@ func (c *OwnedResourceController) processNext(ctx context.Context) bool {
 	ctx = c.OperationsContext.WithValue(ctx, queue.NewOperations(done, requeue))
 
 	c.sync(ctx, *gvr, namespace, name)
-
-	cancel()
+	done()
 	<-ctx.Done()
 
 	return true
