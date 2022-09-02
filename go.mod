@@ -18,7 +18,7 @@ require (
 	k8s.io/client-go v0.25.0
 	k8s.io/component-base v0.25.0
 	k8s.io/controller-manager v0.25.0
-	k8s.io/klog/v2 v2.70.1
+	k8s.io/klog/v2 v2.80.0
 	k8s.io/utils v0.0.0-20220823124924-e9cbc92d1a73
 	mvdan.cc/gofumpt v0.3.1
 	sigs.k8s.io/controller-runtime v0.12.3
