@@ -28,12 +28,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog/v2"
 
 	"github.com/authzed/controller-idioms/handler"
 	"github.com/authzed/controller-idioms/queue"
 	"github.com/authzed/controller-idioms/typed"
 	"github.com/authzed/controller-idioms/typedctx"
+	"github.com/go-logr/logr"
 )
 
 // TODO: a variant where there can only be one owner (label only, fail if labelled for someone else)
@@ -147,7 +147,7 @@ type AdoptionHandler[K Object, A Adoptable[A]] struct {
 }
 
 func (s *AdoptionHandler[K, A]) Handle(ctx context.Context) {
-	logger := klog.FromContext(ctx)
+	logger := logr.FromContextOrDiscard(ctx)
 	adoptee := s.AdopteeCtx.MustValue(ctx)
 	owner := s.OwnerCtx.MustValue(ctx)
 

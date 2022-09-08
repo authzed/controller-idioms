@@ -20,9 +20,8 @@ import (
 	"context"
 	"time"
 
-	"k8s.io/klog/v2"
-
 	"github.com/authzed/controller-idioms/typedctx"
+	"github.com/go-logr/logr"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -50,12 +49,12 @@ func (h OperationsContext) Requeue(ctx context.Context) {
 }
 
 func (h OperationsContext) RequeueErr(ctx context.Context, err error) {
-	klog.FromContext(ctx).V(4).WithCallDepth(3).Error(err, "requeueing after error")
+	logr.FromContextOrDiscard(ctx).V(4).WithCallDepth(3).Error(err, "requeueing after error")
 	h.MustValue(ctx).RequeueErr(err)
 }
 
 func (h OperationsContext) RequeueAPIErr(ctx context.Context, err error) {
-	klog.FromContext(ctx).V(4).WithCallDepth(3).Error(err, "requeueing after api error")
+	logr.FromContextOrDiscard(ctx).V(4).WithCallDepth(3).Error(err, "requeueing after api error")
 	h.MustValue(ctx).RequeueAPIErr(err)
 }
 

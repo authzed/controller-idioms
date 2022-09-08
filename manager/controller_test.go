@@ -12,6 +12,7 @@ import (
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 	ctrlmanageropts "k8s.io/controller-manager/options"
+	"k8s.io/klog/v2/klogr"
 
 	"github.com/authzed/controller-idioms/cachekeys"
 	"github.com/authzed/controller-idioms/queue"
@@ -31,7 +32,7 @@ func ExampleNewOwnedResourceController() {
 
 	// the controller processes objects on the queue, but doesn't set up any
 	// informers by default.
-	controller := NewOwnedResourceController("my-controller", gvr, CtxQueue, registry, broadcaster, func(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) {
+	controller := NewOwnedResourceController(klogr.New(), "my-controller", gvr, CtxQueue, registry, broadcaster, func(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) {
 		// process object
 	})
 
@@ -53,7 +54,7 @@ func TestControllerQueueDone(t *testing.T) {
 	broadcaster := record.NewBroadcaster()
 	eventSink := &typedcorev1.EventSinkImpl{Interface: fake.NewSimpleClientset().CoreV1().Events("")}
 
-	controller := NewOwnedResourceController("my-controller", gvr, CtxQueue, registry, broadcaster, func(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) {
+	controller := NewOwnedResourceController(klogr.New(), "my-controller", gvr, CtxQueue, registry, broadcaster, func(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) {
 	})
 
 	mgr := NewManager(ctrlmanageropts.RecommendedDebuggingOptions().DebuggingConfiguration, ":", broadcaster, eventSink)

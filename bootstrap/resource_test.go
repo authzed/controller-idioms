@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -13,10 +14,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/testing"
+	"k8s.io/klog/v2/klogr"
 )
 
 func ExampleResourceFromFile() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(logr.NewContext(context.Background(), klogr.New()))
 	defer cancel()
 
 	secretGVR := corev1.SchemeGroupVersion.WithResource("secrets")

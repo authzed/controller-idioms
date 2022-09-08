@@ -5,9 +5,8 @@ import (
 	"encoding/base64"
 	"math/rand"
 
-	"k8s.io/klog/v2"
-
 	"github.com/authzed/controller-idioms/handler"
+	"github.com/go-logr/logr"
 )
 
 // NewSyncID returns a random string of length `size` that can be added to log
@@ -21,17 +20,17 @@ func NewSyncID(size uint8) string {
 }
 
 // NewHandlerLoggingMiddleware creates a new HandlerLoggingMiddleware for a
-// particular klog log level.
+// particular logr log level.
 func NewHandlerLoggingMiddleware(level int) Middleware {
 	return MakeMiddleware(HandlerLoggingMiddleware(level))
 }
 
-// HandlerLoggingMiddleware logs on entry to a handler. It uses the klog logger
+// HandlerLoggingMiddleware logs on entry to a handler. It uses the logr logger
 // found in the context.
 func HandlerLoggingMiddleware(level int) HandlerMiddleware {
 	return func(in handler.Handler) handler.Handler {
 		return handler.NewHandlerFromFunc(func(ctx context.Context) {
-			logger := klog.FromContext(ctx)
+			logger := logr.FromContextOrDiscard(ctx)
 			logger = logger.WithValues("handler", in.ID())
 			logger.V(level).Info("entering handler")
 			in.Handle(ctx)

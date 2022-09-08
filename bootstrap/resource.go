@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -27,7 +28,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/klog/v2"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -41,7 +41,7 @@ type KubeResourceObject interface {
 // ResourceFromFile creates a KubeResourceObject with the given config file
 func ResourceFromFile[O KubeResourceObject](ctx context.Context, fieldManager string, gvr schema.GroupVersionResource, dclient dynamic.Interface, configPath string, lastHash uint64) (uint64, error) {
 	if len(configPath) <= 0 {
-		klog.V(4).Info("bootstrap file path not specified")
+		logr.FromContextOrDiscard(ctx).V(4).Info("bootstrap file path not specified")
 		return 0, nil
 	}
 
@@ -50,7 +50,7 @@ func ResourceFromFile[O KubeResourceObject](ctx context.Context, fieldManager st
 		utilruntime.HandleError(f.Close())
 	}()
 	if errors.Is(err, os.ErrNotExist) {
-		klog.V(4).Info("no bootstrap file present, skipping bootstrapping")
+		logr.FromContextOrDiscard(ctx).V(4).Info("no bootstrap file present, skipping bootstrapping")
 		return 0, nil
 	}
 	if err != nil {

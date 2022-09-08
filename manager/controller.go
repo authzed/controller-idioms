@@ -31,11 +31,11 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/controller-manager/controller"
 	controllerhealthz "k8s.io/controller-manager/pkg/healthz"
-	"k8s.io/klog/v2"
 
 	"github.com/authzed/controller-idioms/cachekeys"
 	"github.com/authzed/controller-idioms/queue"
 	"github.com/authzed/controller-idioms/typed"
+	"github.com/go-logr/logr"
 )
 
 // SyncFunc is a function called when an event needs processing
@@ -86,6 +86,7 @@ func (c *BasicController) Start(ctx context.Context, numThreads int) {}
 //   - The owned object has standard meta.Conditions and emits metrics for them
 type OwnedResourceController struct {
 	*BasicController
+	log logr.Logger
 	queue.OperationsContext
 	Registry *typed.Registry
 	Recorder record.EventRecorder
@@ -94,8 +95,9 @@ type OwnedResourceController struct {
 	sync     SyncFunc
 }
 
-func NewOwnedResourceController(name string, owned schema.GroupVersionResource, key queue.OperationsContext, registry *typed.Registry, broadcaster record.EventBroadcaster, syncFunc SyncFunc) *OwnedResourceController {
+func NewOwnedResourceController(log logr.Logger, name string, owned schema.GroupVersionResource, key queue.OperationsContext, registry *typed.Registry, broadcaster record.EventBroadcaster, syncFunc SyncFunc) *OwnedResourceController {
 	return &OwnedResourceController{
+		log:               log,
 		BasicController:   NewBasicController(name),
 		OperationsContext: key,
 		Registry:          registry,
@@ -110,8 +112,8 @@ func (c *OwnedResourceController) Start(ctx context.Context, numThreads int) {
 	defer utilruntime.HandleCrash()
 	defer c.Queue.ShutDown()
 
-	klog.V(3).InfoS("starting controller", "resource", c.Owned)
-	defer klog.V(3).InfoS("stopping controller", "resource", c.Owned)
+	c.log.V(3).Info("starting controller", "resource", c.Owned)
+	defer c.log.V(3).Info("stopping controller", "resource", c.Owned)
 
 	for i := 0; i < numThreads; i++ {
 		go wait.Until(func() { c.startWorker(ctx) }, time.Second, ctx.Done())
@@ -146,12 +148,12 @@ func (c *OwnedResourceController) processNext(ctx context.Context) bool {
 	ctx, cancel := context.WithCancel(ctx)
 
 	done := func() {
-		klog.FromContext(ctx).V(5).Info("done", "key", key)
+		logr.FromContextOrDiscard(ctx).V(5).Info("done", "key", key)
 		cancel()
 		c.Queue.Forget(key)
 	}
 	requeue := func(after time.Duration) {
-		klog.FromContext(ctx).V(5).Info("requeue", "key", key, "after", after)
+		logr.FromContextOrDiscard(ctx).V(5).Info("requeue", "key", key, "after", after)
 		cancel()
 		if after == 0 {
 			c.Queue.AddRateLimited(key)
