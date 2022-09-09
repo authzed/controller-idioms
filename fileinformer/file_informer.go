@@ -222,7 +222,7 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 			for {
 				select {
 				case <-ctx.Done():
-					f.log.V(4).Info("resyncing file after %s", f.defaultEventHandlerResyncPeriod.String())
+					f.log.V(4).Info("resyncing file", "after", f.defaultEventHandlerResyncPeriod.String())
 					f.RLock()
 					for _, h := range f.handlers {
 						h.OnUpdate(fileName, fileName)
@@ -235,11 +235,11 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 						cancel()
 						return
 					}
-					f.log.V(8).Info("filewatcher got event %s for %q", event.String(), event.Name)
+					f.log.V(8).Info("filewatcher got event", "event", event.String(), "event_name", event.Name)
 					if event.Name != fileName {
 						continue
 					}
-					f.log.V(4).Info("filewatcher got event %s for %q", event.String(), event.Name)
+					f.log.V(4).Info("filewatcher got event", "event", event.String(), "event_name", event.Name)
 					if event.Op&fsnotify.Write == fsnotify.Write ||
 						event.Op&fsnotify.Create == fsnotify.Create {
 						f.RLock()
