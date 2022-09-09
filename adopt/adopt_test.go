@@ -65,19 +65,21 @@ func TestSecretAdopterHandler(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name                string
-		secretName          string
-		cluster             types.NamespacedName
-		secretInCache       *corev1.Secret
-		cacheErr            error
-		secretsInIndex      []*corev1.Secret
-		applyCalls          []*applyCall
-		expectEvents        []string
-		expectNext          bool
-		expectRequeueErr    error
-		expectRequeueAPIErr error
-		expectRequeue       bool
-		expectCtxSecret     *corev1.Secret
+		name                   string
+		secretName             string
+		cluster                types.NamespacedName
+		secretInCache          *corev1.Secret
+		cacheErr               error
+		secretsInIndex         []*corev1.Secret
+		secretExistsErr        error
+		applyCalls             []*applyCall
+		expectEvents           []string
+		expectNext             bool
+		expectRequeueErr       error
+		expectRequeueAPIErr    error
+		expectRequeue          bool
+		expectObjectMissingErr error
+		expectCtxSecret        *corev1.Secret
 	}{
 		{
 			name: "no secret",
@@ -88,6 +90,19 @@ func TestSecretAdopterHandler(t *testing.T) {
 			secretName: "",
 			applyCalls: []*applyCall{},
 			expectNext: true,
+		},
+		{
+			name:       "secret does not exist",
+			secretName: "secret",
+			cluster: types.NamespacedName{
+				Namespace: "test",
+				Name:      "test",
+			},
+			cacheErr:               secretNotFound("test"),
+			secretExistsErr:        secretNotFound("test"),
+			secretsInIndex:         []*corev1.Secret{},
+			applyCalls:             []*applyCall{},
+			expectObjectMissingErr: secretNotFound("test"),
 		},
 		{
 			name:       "secret needs adopting",
@@ -312,6 +327,9 @@ func TestSecretAdopterHandler(t *testing.T) {
 				func(ctx context.Context) (*corev1.Secret, error) {
 					return tt.secretInCache, tt.cacheErr
 				},
+				func(ctx context.Context, err error) {
+					require.Equal(t, tt.expectObjectMissingErr, err)
+				},
 				typed.NewIndexer[*corev1.Secret](indexer),
 				func(ctx context.Context, secret *applycorev1.SecretApplyConfiguration, opts metav1.ApplyOptions) (result *corev1.Secret, err error) {
 					defer func() { applyCallIndex++ }()
@@ -319,6 +337,9 @@ func TestSecretAdopterHandler(t *testing.T) {
 					call.called = true
 					require.Equal(t, call.input, secret, "error on call %d", applyCallIndex)
 					return call.result, call.err
+				},
+				func(ctx context.Context, nn types.NamespacedName) error {
+					return tt.secretExistsErr
 				},
 				handler.NewHandlerFromFunc(func(ctx context.Context) {
 					nextCalled = true
@@ -347,7 +368,7 @@ func TestSecretAdopterHandler(t *testing.T) {
 	}
 }
 
-func NewSecretAdoptionHandler(recorder record.EventRecorder, getFromCache func(ctx context.Context) (*corev1.Secret, error), secretIndexer *typed.Indexer[*corev1.Secret], secretApplyFunc ApplyFunc[*corev1.Secret, *applycorev1.SecretApplyConfiguration], next handler.Handler) handler.Handler {
+func NewSecretAdoptionHandler(recorder record.EventRecorder, getFromCache func(ctx context.Context) (*corev1.Secret, error), missingFunc func(context.Context, error), secretIndexer *typed.Indexer[*corev1.Secret], secretApplyFunc ApplyFunc[*corev1.Secret, *applycorev1.SecretApplyConfiguration], secretExistsFunc ExistsFunc, next handler.Handler) handler.Handler {
 	return handler.NewHandler(&AdoptionHandler[*corev1.Secret, *applycorev1.SecretApplyConfiguration]{
 		OperationsContext:      QueueOps,
 		ControllerFieldManager: "test-controller",
@@ -357,10 +378,11 @@ func NewSecretAdoptionHandler(recorder record.EventRecorder, getFromCache func(c
 		ObjectAdoptedFunc: func(ctx context.Context, secret *corev1.Secret) {
 			recorder.Eventf(secret, corev1.EventTypeNormal, EventSecretAdopted, "Secret was referenced by %s; it has been labelled to mark it as part of the configuration for that controller.", CtxOwnerNN.MustValue(ctx).String())
 		},
-		GetFromCache: getFromCache,
-		Indexer:      secretIndexer,
-		IndexName:    IndexName,
-		Labels:       map[string]string{ManagedLabelKey: ManagedLabelValue},
+		ObjectMissingFunc: missingFunc,
+		GetFromCache:      getFromCache,
+		Indexer:           secretIndexer,
+		IndexName:         IndexName,
+		Labels:            map[string]string{ManagedLabelKey: ManagedLabelValue},
 		NewPatch: func(nn types.NamespacedName) *applycorev1.SecretApplyConfiguration {
 			return applycorev1.Secret(nn.Name, nn.Namespace)
 		},
@@ -371,12 +393,10 @@ func NewSecretAdoptionHandler(recorder record.EventRecorder, getFromCache func(c
 		OwnerFieldManagerFunc: func(owner types.NamespacedName) string {
 			return "my-owner-" + owner.Namespace + "-" + owner.Name
 		},
-		ApplyFunc: secretApplyFunc,
-		Next:      next,
+		ApplyFunc:  secretApplyFunc,
+		ExistsFunc: secretExistsFunc,
+		Next:       next,
 	}, "adoptSecret")
-}
-
-func ExampleAdoptionHandler_Handle() {
 }
 
 func ExpectEvents(t *testing.T, recorder *record.FakeRecorder, expected []string) {
