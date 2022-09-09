@@ -29,11 +29,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/go-logr/logr"
+
 	"github.com/authzed/controller-idioms/handler"
 	"github.com/authzed/controller-idioms/queue"
 	"github.com/authzed/controller-idioms/typed"
 	"github.com/authzed/controller-idioms/typedctx"
-	"github.com/go-logr/logr"
 )
 
 // TODO: a variant where there can only be one owner (label only, fail if labelled for someone else)
@@ -73,11 +74,24 @@ type Object interface {
 // be applied with a client-go Patch call, and return a Secret.
 type ApplyFunc[K Object, A Adoptable[A]] func(ctx context.Context, object A, opts metav1.ApplyOptions) (result K, err error)
 
+// ExistsFunc should return nil if the object exists in the cluster, and an
+// error otherwise.
+type ExistsFunc func(ctx context.Context, nn types.NamespacedName) error
+
 // IndexKeyFunc returns the name of an index to use and the value to query it for.
 type IndexKeyFunc func(ctx context.Context) (indexName string, indexValue string)
 
 // Owned is used in object annotations to indicate an object is managed.
 const Owned = "owned"
+
+var (
+	// AlwaysExistsFunc is an ExistsFunc that always returns nil
+	AlwaysExistsFunc ExistsFunc = func(ctx context.Context, nn types.NamespacedName) error {
+		return nil
+	}
+	// NoopObjectMissingFunc is an ObjectMissing func that does nothing
+	NoopObjectMissingFunc = func(ctx context.Context, err error) {}
+)
 
 // AdoptionHandler implements handler.Handler to "adopt" an existing resource
 // under the controller's management. See the package description for more info.
@@ -106,6 +120,9 @@ type AdoptionHandler[K Object, A Adoptable[A]] struct {
 
 	// ObjectAdoptedFunc is called when an adoption was performed
 	ObjectAdoptedFunc func(ctx context.Context, obj K)
+
+	// ObjectMissingFunc is called when the object cannot be found
+	ObjectMissingFunc func(ctx context.Context, err error)
 
 	// TODO: GetFromCache and Indexer could be replaced with an informerfactory
 	//  that can be used to get both
@@ -142,6 +159,9 @@ type AdoptionHandler[K Object, A Adoptable[A]] struct {
 	// ApplyFunc applies adoption-related changes to the object to the cluster
 	ApplyFunc ApplyFunc[K, A]
 
+	// ExistsFunc checks if the object to be adopted exists in the cluster
+	ExistsFunc ExistsFunc
+
 	// Next is the next handler in the chain (use NoopHandler if not chaining)
 	Next handler.ContextHandler
 }
@@ -150,6 +170,14 @@ func (s *AdoptionHandler[K, A]) Handle(ctx context.Context) {
 	logger := logr.FromContextOrDiscard(ctx)
 	adoptee := s.AdopteeCtx.MustValue(ctx)
 	owner := s.OwnerCtx.MustValue(ctx)
+
+	if s.ExistsFunc == nil {
+		s.ExistsFunc = AlwaysExistsFunc
+	}
+
+	if s.ObjectMissingFunc == nil {
+		s.ObjectMissingFunc = NoopObjectMissingFunc
+	}
 
 	// adoptee may be empty, but the handler still runs so that it can clean up
 	// any old references that may remain.
@@ -164,6 +192,12 @@ func (s *AdoptionHandler[K, A]) Handle(ctx context.Context) {
 	// this apply uses the controller as field manager, since it will be the
 	// same for all owners.
 	if len(adoptee.Name) > 0 && errors.IsNotFound(err) {
+		// check if object exists at all before applying
+		logger.V(5).Info("checking if object exists", "object", adoptee)
+		if err := s.ExistsFunc(ctx, adoptee); err != nil {
+			s.ObjectMissingFunc(ctx, err)
+			return
+		}
 		logger.V(5).Info("labelling object to make it visible to the index",
 			"adoptee", adoptee.String(),
 			"manager", s.ControllerFieldManager,
