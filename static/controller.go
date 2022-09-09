@@ -15,6 +15,7 @@ import (
 	"github.com/authzed/controller-idioms/bootstrap"
 	"github.com/authzed/controller-idioms/fileinformer"
 	"github.com/authzed/controller-idioms/manager"
+	"github.com/go-logr/logr"
 )
 
 type Controller[K bootstrap.KubeResourceObject] struct {
@@ -29,8 +30,8 @@ type Controller[K bootstrap.KubeResourceObject] struct {
 	lastStaticHash atomic.Uint64
 }
 
-func NewStaticController[K bootstrap.KubeResourceObject](name string, path string, gvr schema.GroupVersionResource, client dynamic.Interface) (*Controller[K], error) {
-	fileInformerFactory, err := fileinformer.NewFileInformerFactory()
+func NewStaticController[K bootstrap.KubeResourceObject](log logr.Logger, name string, path string, gvr schema.GroupVersionResource, client dynamic.Interface) (*Controller[K], error) {
+	fileInformerFactory, err := fileinformer.NewFileInformerFactory(log)
 	if err != nil {
 		return nil, err
 	}

@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
 )
 
 // FileGroupVersion is a sythetic GroupVersion that the informers use.
@@ -26,6 +26,7 @@ var FileGroupVersion = schema.GroupVersion{
 // Factory implements dynamicinformer.DynamicSharedInformerFactory, but for
 // starting and managing FileInformers.
 type Factory struct {
+	log logr.Logger
 	sync.Mutex
 	informers map[schema.GroupVersionResource]informers.GenericInformer
 	// startedInformers is used for tracking which informers have been started.
@@ -36,8 +37,9 @@ type Factory struct {
 var _ dynamicinformer.DynamicSharedInformerFactory = &Factory{}
 
 // NewFileInformerFactory creates a new Factory.
-func NewFileInformerFactory() (*Factory, error) {
+func NewFileInformerFactory(log logr.Logger) (*Factory, error) {
 	return &Factory{
+		log:              log,
 		informers:        make(map[schema.GroupVersionResource]informers.GenericInformer),
 		startedInformers: make(map[schema.GroupVersionResource]bool),
 	}, nil
@@ -71,7 +73,7 @@ func (f *Factory) ForResource(gvr schema.GroupVersionResource) informers.Generic
 	if err != nil {
 		panic(err)
 	}
-	informer, err = NewFileInformer(watcher, gvr)
+	informer, err = NewFileInformer(f.log, watcher, gvr)
 	if err != nil {
 		panic(err)
 	}
@@ -104,6 +106,7 @@ func (f *Factory) WaitForCacheSync(stopCh <-chan struct{}) map[schema.GroupVersi
 
 // FileInformer is an informer that watches files instead of the kube api.
 type FileInformer struct {
+	log      logr.Logger
 	fileName string
 	watcher  *fsnotify.Watcher
 	informer cache.SharedIndexInformer
@@ -112,11 +115,12 @@ type FileInformer struct {
 var _ informers.GenericInformer = &FileInformer{}
 
 // NewFileInformer returns a new FileInformer.
-func NewFileInformer(watcher *fsnotify.Watcher, gvr schema.GroupVersionResource) (*FileInformer, error) {
+func NewFileInformer(log logr.Logger, watcher *fsnotify.Watcher, gvr schema.GroupVersionResource) (*FileInformer, error) {
 	return &FileInformer{
+		log:      log,
 		fileName: gvr.Resource,
 		watcher:  watcher,
-		informer: NewFileSharedIndexInformer(gvr.Resource, watcher, 1*time.Minute),
+		informer: NewFileSharedIndexInformer(log, gvr.Resource, watcher, 1*time.Minute),
 	}, nil
 }
 
@@ -130,6 +134,7 @@ func (f *FileInformer) Lister() cache.GenericLister {
 }
 
 type FileSharedIndexInformer struct {
+	log logr.Logger
 	sync.Once
 	sync.RWMutex
 	defaultEventHandlerResyncPeriod time.Duration
@@ -144,8 +149,9 @@ var _ cache.SharedIndexInformer = &FileSharedIndexInformer{}
 
 // NewFileSharedIndexInformer creates a new informer watching the file
 // Note that currently all event handlers share the default resync period.
-func NewFileSharedIndexInformer(fileName string, watcher *fsnotify.Watcher, defaultEventHandlerResyncPeriod time.Duration) *FileSharedIndexInformer {
+func NewFileSharedIndexInformer(log logr.Logger, fileName string, watcher *fsnotify.Watcher, defaultEventHandlerResyncPeriod time.Duration) *FileSharedIndexInformer {
 	return &FileSharedIndexInformer{
+		log:                             log.WithValues("file", fileName),
 		fileName:                        fileName,
 		watcher:                         watcher,
 		handlers:                        []cache.ResourceEventHandler{},
@@ -187,7 +193,7 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 		utilruntime.HandleError(f.watcher.Add(fileName))
 		f.started = true
 		f.Unlock()
-		klog.V(4).Infof("started watching %q", fileName)
+		f.log.V(4).Info("started watching")
 
 		if len(fileName) == 0 {
 			return
@@ -210,13 +216,13 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 				defer f.Unlock()
 				utilruntime.HandleError(f.watcher.Remove(fileName))
 				utilruntime.HandleError(f.watcher.Close())
-				klog.V(4).Infof("stopped watching %q", fileName)
+				f.log.V(4).Info("stopped watching")
 			}()
 			ctx, cancel := context.WithTimeout(context.Background(), f.defaultEventHandlerResyncPeriod)
 			for {
 				select {
 				case <-ctx.Done():
-					klog.V(4).Infof("resyncing file %s after %s", fileName, f.defaultEventHandlerResyncPeriod.String())
+					f.log.V(4).Info("resyncing file", "after", f.defaultEventHandlerResyncPeriod.String())
 					f.RLock()
 					for _, h := range f.handlers {
 						h.OnUpdate(fileName, fileName)
@@ -229,11 +235,11 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 						cancel()
 						return
 					}
-					klog.V(8).Infof("filewatcher got event %s for %q", event.String(), event.Name)
+					f.log.V(8).Info("filewatcher got event", "event", event.String(), "event_name", event.Name)
 					if event.Name != fileName {
 						continue
 					}
-					klog.V(4).Infof("filewatcher got event %s for %q", event.String(), event.Name)
+					f.log.V(4).Info("filewatcher got event", "event", event.String(), "event_name", event.Name)
 					if event.Op&fsnotify.Write == fsnotify.Write ||
 						event.Op&fsnotify.Create == fsnotify.Create {
 						f.RLock()

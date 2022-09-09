@@ -10,10 +10,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2/klogr"
 )
 
 func TestFileInformer(t *testing.T) {
-	informerFactory, err := NewFileInformerFactory()
+	informerFactory, err := NewFileInformerFactory(klogr.New())
 	require.NoError(t, err)
 
 	file, err := os.CreateTemp("", "watched-file")
