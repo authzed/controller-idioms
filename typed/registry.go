@@ -73,7 +73,7 @@ func NewRegistry() *Registry {
 }
 
 // MustNewFilteredDynamicSharedInformerFactory creates a new SharedInformerFactory
-// and registers it under the given RegistryKey. It panics if there is already
+// and registers it under the given FactoryKey. It panics if there is already
 // an entry with that key.
 func (r *Registry) MustNewFilteredDynamicSharedInformerFactory(key FactoryKey, client dynamic.Interface, defaultResync time.Duration, namespace string, tweakListOptions dynamicinformer.TweakListOptionsFunc) dynamicinformer.DynamicSharedInformerFactory {
 	factory, err := r.NewFilteredDynamicSharedInformerFactory(key, client, defaultResync, namespace, tweakListOptions)
@@ -84,15 +84,13 @@ func (r *Registry) MustNewFilteredDynamicSharedInformerFactory(key FactoryKey, c
 }
 
 // NewFilteredDynamicSharedInformerFactory creates a new SharedInformerFactory
-// and registers it under the given RegistryKey
+// and registers it under the given FactoryKey
 func (r *Registry) NewFilteredDynamicSharedInformerFactory(key FactoryKey, client dynamic.Interface, defaultResync time.Duration, namespace string, tweakListOptions dynamicinformer.TweakListOptionsFunc) (dynamicinformer.DynamicSharedInformerFactory, error) {
-	r.Lock()
-	defer r.Unlock()
-	if _, ok := r.factories[key]; ok {
-		return nil, fmt.Errorf("cannot register two InformerFactories with the same key: %s", key)
+	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(client, defaultResync, namespace, tweakListOptions)
+	if err := r.Add(key, factory); err != nil {
+		return nil, err
 	}
-	r.factories[key] = dynamicinformer.NewFilteredDynamicSharedInformerFactory(client, defaultResync, namespace, tweakListOptions)
-	return r.factories[key], nil
+	return factory, nil
 }
 
 // ListerFor returns a typed Lister from a Registry
@@ -105,17 +103,21 @@ func IndexerFor[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
 	return NewIndexer[K](r.InformerFor(key).GetIndexer())
 }
 
-// Add adds a factory to the registry under the given RegistryKey
-func (r *Registry) Add(key RegistryKey, factory dynamicinformer.DynamicSharedInformerFactory) {
+// Add adds a factory to the registry under the given FactoryKey
+func (r *Registry) Add(key FactoryKey, factory dynamicinformer.DynamicSharedInformerFactory) error {
 	r.Lock()
 	defer r.Unlock()
+	if _, ok := r.factories[key]; ok {
+		return fmt.Errorf("cannot register two InformerFactories with the same key: %s", key)
+	}
 	r.factories[key] = factory
+	return nil
 }
 
 // Remove removes a factory from the registry. Note that it does not stop any
 // informers that were started via the factory; they should be stopped via
 // context cancellation.
-func (r *Registry) Remove(key RegistryKey, factory dynamicinformer.DynamicSharedInformerFactory) {
+func (r *Registry) Remove(key FactoryKey) {
 	r.Lock()
 	defer r.Unlock()
 	delete(r.factories, key)
