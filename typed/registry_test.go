@@ -3,6 +3,7 @@ package typed
 import (
 	"context"
 	"fmt"
+	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -145,4 +146,33 @@ func ExampleIndexerFor() {
 	matchingCachedSecrets, _ := IndexerFor[*corev1.Secret](registry, dependentSecretKey).ByIndex(indexName, constantIndexValue)
 	fmt.Printf("%T %s/%s", matchingCachedSecrets, matchingCachedSecrets[0].GetNamespace(), matchingCachedSecrets[0].GetName())
 	// Output: []*v1.Secret example/mysecret
+}
+
+func TestRemove(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	secretGVR := corev1.SchemeGroupVersion.WithResource("secrets")
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
+	client := fake.NewSimpleDynamicClient(scheme)
+	registry := NewRegistry()
+
+	dependentObjectKey := NewFactoryKey("my-controller", "localCluster", "dependentObjects")
+	informerFactory := registry.MustNewFilteredDynamicSharedInformerFactory(
+		dependentObjectKey,
+		client,
+		0,
+		metav1.NamespaceAll,
+		func(options *metav1.ListOptions) {
+			options.LabelSelector = "my-controller.com/related-to=myobjecttype"
+		},
+	)
+	informerFactory.ForResource(secretGVR)
+	informerFactory.Start(ctx.Done())
+	informerFactory.WaitForCacheSync(ctx.Done())
+
+	registry.Remove(dependentObjectKey)
 }
