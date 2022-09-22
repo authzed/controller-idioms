@@ -13,6 +13,16 @@ type FakeInterface struct {
 	doneMutex       sync.RWMutex
 	doneArgsForCall []struct {
 	}
+	ErrorStub        func() error
+	errorMutex       sync.RWMutex
+	errorArgsForCall []struct {
+	}
+	errorReturns struct {
+		result1 error
+	}
+	errorReturnsOnCall map[int]struct {
+		result1 error
+	}
 	RequeueStub        func()
 	requeueMutex       sync.RWMutex
 	requeueArgsForCall []struct {
@@ -58,6 +68,59 @@ func (fake *FakeInterface) DoneCalls(stub func()) {
 	fake.doneMutex.Lock()
 	defer fake.doneMutex.Unlock()
 	fake.DoneStub = stub
+}
+
+func (fake *FakeInterface) Error() error {
+	fake.errorMutex.Lock()
+	ret, specificReturn := fake.errorReturnsOnCall[len(fake.errorArgsForCall)]
+	fake.errorArgsForCall = append(fake.errorArgsForCall, struct {
+	}{})
+	stub := fake.ErrorStub
+	fakeReturns := fake.errorReturns
+	fake.recordInvocation("Error", []interface{}{})
+	fake.errorMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeInterface) ErrorCallCount() int {
+	fake.errorMutex.RLock()
+	defer fake.errorMutex.RUnlock()
+	return len(fake.errorArgsForCall)
+}
+
+func (fake *FakeInterface) ErrorCalls(stub func() error) {
+	fake.errorMutex.Lock()
+	defer fake.errorMutex.Unlock()
+	fake.ErrorStub = stub
+}
+
+func (fake *FakeInterface) ErrorReturns(result1 error) {
+	fake.errorMutex.Lock()
+	defer fake.errorMutex.Unlock()
+	fake.ErrorStub = nil
+	fake.errorReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeInterface) ErrorReturnsOnCall(i int, result1 error) {
+	fake.errorMutex.Lock()
+	defer fake.errorMutex.Unlock()
+	fake.ErrorStub = nil
+	if fake.errorReturnsOnCall == nil {
+		fake.errorReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.errorReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
 }
 
 func (fake *FakeInterface) Requeue() {
@@ -185,6 +248,8 @@ func (fake *FakeInterface) Invocations() map[string][][]interface{} {
 	defer fake.invocationsMutex.RUnlock()
 	fake.doneMutex.RLock()
 	defer fake.doneMutex.RUnlock()
+	fake.errorMutex.RLock()
+	defer fake.errorMutex.RUnlock()
 	fake.requeueMutex.RLock()
 	defer fake.requeueMutex.RUnlock()
 	fake.requeueAPIErrMutex.RLock()

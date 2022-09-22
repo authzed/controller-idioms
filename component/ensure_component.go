@@ -23,7 +23,7 @@ type Annotator[T any] interface {
 // will create a component object and ensure it has the computed spec.
 type EnsureComponentByHash[K KubeObject, A Annotator[A]] struct {
 	*HashableComponent[K]
-	ctrls        *typedctx.Key[queue.Interface]
+	ctrls        queue.OperationsContext
 	nn           typedctx.MustValueContext[types.NamespacedName]
 	applyObject  func(ctx context.Context, apply A) (K, error)
 	deleteObject func(ctx context.Context, nn types.NamespacedName) error
@@ -36,7 +36,7 @@ var _ handler.ContextHandler = &EnsureComponentByHash[*corev1.Service, *applycor
 func NewEnsureComponentByHash[K KubeObject, A Annotator[A]](
 	component *HashableComponent[K],
 	owner typedctx.MustValueContext[types.NamespacedName],
-	ctrls *typedctx.Key[queue.Interface],
+	ctrls queue.OperationsContext,
 	applyObj func(ctx context.Context, apply A) (K, error),
 	deleteObject func(ctx context.Context, nn types.NamespacedName) error,
 	newObj func(ctx context.Context) A,
@@ -57,7 +57,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 	newObj := e.newObj(ctx)
 	hash, err := e.Hash(newObj)
 	if err != nil {
-		e.ctrls.MustValue(ctx).RequeueErr(err)
+		e.ctrls.RequeueErr(ctx, err)
 		return
 	}
 	newObj = newObj.WithAnnotations(map[string]string{e.HashAnnotationKey: hash})
@@ -80,7 +80,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 		// apply if no matching KubeObject in cluster
 		_, err = e.applyObject(ctx, newObj)
 		if err != nil {
-			e.ctrls.MustValue(ctx).RequeueErr(err)
+			e.ctrls.RequeueErr(ctx, err)
 			return
 		}
 	}
@@ -92,7 +92,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 				Namespace: o.GetNamespace(),
 				Name:      o.GetName(),
 			}); err != nil {
-				e.ctrls.MustValue(ctx).RequeueErr(err)
+				e.ctrls.RequeueErr(ctx, err)
 				return
 			}
 		}

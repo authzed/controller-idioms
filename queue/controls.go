@@ -20,8 +20,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/authzed/controller-idioms/typedctx"
 	"github.com/go-logr/logr"
+
+	"github.com/authzed/controller-idioms/typedctx"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
@@ -58,10 +59,15 @@ func (h OperationsContext) RequeueAPIErr(ctx context.Context, err error) {
 	h.MustValue(ctx).RequeueAPIErr(err)
 }
 
-func NewOperations(done func(), requeueAfter func(time.Duration)) *Operations {
+func (h OperationsContext) Error(ctx context.Context) error {
+	return h.MustValue(ctx).Error()
+}
+
+func NewOperations(done func(), requeueAfter func(time.Duration), cancel context.CancelFunc) *Operations {
 	return &Operations{
 		done:         done,
 		requeueAfter: requeueAfter,
+		cancel:       cancel,
 	}
 }
 
@@ -74,6 +80,7 @@ type Interface interface {
 	Requeue()
 	RequeueErr(err error)
 	RequeueAPIErr(err error)
+	Error() error
 }
 
 // Operations deals with the current queue key and provides controls for
@@ -81,25 +88,42 @@ type Interface interface {
 type Operations struct {
 	done         func()
 	requeueAfter func(duration time.Duration)
+	cancel       context.CancelFunc
+	err          error
 }
 
+// Done marks the current key as finished. Note that processing should stop
+// as soon as possible after calling `Done`, since marking it as done frees the
+// queue to potentially process the same key again.
 func (c *Operations) Done() {
+	defer c.cancel()
 	c.done()
 }
 
+// RequeueAfter requeues the current key after duration.
 func (c *Operations) RequeueAfter(duration time.Duration) {
+	defer c.cancel()
 	c.requeueAfter(duration)
 }
 
+// Requeue requeues the current key immediately.
 func (c *Operations) Requeue() {
+	defer c.cancel()
 	c.requeueAfter(0)
 }
 
+// RequeueErr sets err on the object and requeues the current key.
 func (c *Operations) RequeueErr(err error) {
+	defer c.cancel()
+	c.err = err
 	c.requeueAfter(0)
 }
 
+// RequeueAPIErr checks to see if `err` is a kube api error with retry data.
+// If so, it requeues after the wait period, otherwise, it requeues immediately.
 func (c *Operations) RequeueAPIErr(err error) {
+	defer c.cancel()
+	c.err = err
 	retry, after := ShouldRetry(err)
 	if retry && after > 0 {
 		c.RequeueAfter(after)
@@ -108,4 +132,9 @@ func (c *Operations) RequeueAPIErr(err error) {
 		c.Requeue()
 	}
 	c.Done()
+}
+
+// Error returns the last recorded error, if any
+func (c *Operations) Error() error {
+	return c.err
 }
