@@ -32,10 +32,11 @@ import (
 	"k8s.io/controller-manager/controller"
 	controllerhealthz "k8s.io/controller-manager/pkg/healthz"
 
+	"github.com/go-logr/logr"
+
 	"github.com/authzed/controller-idioms/cachekeys"
 	"github.com/authzed/controller-idioms/queue"
 	"github.com/authzed/controller-idioms/typed"
-	"github.com/go-logr/logr"
 )
 
 // SyncFunc is a function called when an event needs processing
@@ -162,7 +163,7 @@ func (c *OwnedResourceController) processNext(ctx context.Context) bool {
 		c.Queue.AddAfter(key, after)
 	}
 
-	ctx = c.OperationsContext.WithValue(ctx, queue.NewOperations(done, requeue))
+	ctx = c.OperationsContext.WithValue(ctx, queue.NewOperations(done, requeue, cancel))
 
 	c.sync(ctx, *gvr, namespace, name)
 	done()

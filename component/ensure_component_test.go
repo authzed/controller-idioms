@@ -144,7 +144,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 						}),
 					hash.NewObjectHash(), hashKey),
 				ctxOwner,
-				queueOps.Key,
+				queueOps,
 				func(ctx context.Context, apply *applycorev1.ServiceApplyConfiguration) (*corev1.Service, error) {
 					applyCalled = true
 					return nil, nil

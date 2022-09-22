@@ -25,7 +25,7 @@ func ExampleNewOperations() {
 		queue.Done(key)
 	}, func(duration time.Duration) {
 		queue.AddAfter(key, duration)
-	})
+	}, cancel)
 
 	// typically called from a handler
 	handler.NewHandlerFromFunc(func(ctx context.Context) {
@@ -57,7 +57,7 @@ func ExampleNewQueueOperationsCtx() {
 		queue.Done(key)
 	}, func(duration time.Duration) {
 		queue.AddAfter(key, duration)
-	}))
+	}, cancel))
 
 	// queue controls are passed via context
 	handler.NewHandlerFromFunc(func(ctx context.Context) {
