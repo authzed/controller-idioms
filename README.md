@@ -5,6 +5,8 @@
 [![Discord Server](https://img.shields.io/discord/844600078504951838?color=7289da&logo=discord "Discord Server")](https://discord.gg/jTysUaxXzM)
 [![Twitter](https://img.shields.io/twitter/follow/authzed?color=%23179CF0&logo=twitter&style=flat-square&label=@authzed "@authzed on Twitter")](https://twitter.com/authzed)
 
+[Watch a short overview of controller-idioms on CNCF's YouTube](https://www.youtube.com/watch?v=yHJR8d9oHFI)
+
 controller-idioms is a collection of generic libraries that complement and extend fundamental Kubernetes libraries (e.g. [controller-runtime]) to implement best practices for Kubernetes controllers.
 
 These libraries were originally developed by [Authzed] to build the [SpiceDB Operator] and their internal projects powering [Authzed Dedicated].
