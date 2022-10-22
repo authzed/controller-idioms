@@ -32,16 +32,34 @@ type Factory struct {
 	// startedInformers is used for tracking which informers have been started.
 	// This allows Start() to be called multiple times safely.
 	startedInformers map[schema.GroupVersionResource]bool
+	opts             FactoryOpts
+}
+
+// FactoryOpts contains the configuration options for the FileInformer factory.
+type FactoryOpts struct {
+	// ResyncPeriod for the shared informer.
+	// Defaults to 1 minute.
+	ResyncPeriod *time.Duration
+}
+
+// fill the default values for the factory options.
+func (f FactoryOpts) fillDefaults() {
+	defaultResync := 1 * time.Minute
+	if f.ResyncPeriod == nil {
+		f.ResyncPeriod = &defaultResync
+	}
 }
 
 var _ dynamicinformer.DynamicSharedInformerFactory = &Factory{}
 
 // NewFileInformerFactory creates a new Factory.
-func NewFileInformerFactory(log logr.Logger) (*Factory, error) {
+func NewFileInformerFactory(log logr.Logger, opts FactoryOpts) (*Factory, error) {
+	opts.fillDefaults()
 	return &Factory{
 		log:              log,
 		informers:        make(map[schema.GroupVersionResource]informers.GenericInformer),
 		startedInformers: make(map[schema.GroupVersionResource]bool),
+		opts:             opts,
 	}, nil
 }
 
@@ -73,7 +91,7 @@ func (f *Factory) ForResource(gvr schema.GroupVersionResource) informers.Generic
 	if err != nil {
 		panic(err)
 	}
-	informer, err = NewFileInformer(f.log, watcher, gvr)
+	informer, err = NewFileInformer(f.log, watcher, gvr, *f.opts.ResyncPeriod)
 	if err != nil {
 		panic(err)
 	}
@@ -115,12 +133,12 @@ type FileInformer struct {
 var _ informers.GenericInformer = &FileInformer{}
 
 // NewFileInformer returns a new FileInformer.
-func NewFileInformer(log logr.Logger, watcher *fsnotify.Watcher, gvr schema.GroupVersionResource) (*FileInformer, error) {
+func NewFileInformer(log logr.Logger, watcher *fsnotify.Watcher, gvr schema.GroupVersionResource, resync time.Duration) (*FileInformer, error) {
 	return &FileInformer{
 		log:      log,
 		fileName: gvr.Resource,
 		watcher:  watcher,
-		informer: NewFileSharedIndexInformer(log, gvr.Resource, watcher, 1*time.Minute),
+		informer: NewFileSharedIndexInformer(log, gvr.Resource, watcher, resync),
 	}, nil
 }
 
