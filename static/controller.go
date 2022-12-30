@@ -47,11 +47,14 @@ func NewStaticController[K bootstrap.KubeResourceObject](log logr.Logger, name s
 
 func (c *Controller[K]) Start(ctx context.Context, numThreads int) {
 	inf := c.fileInformerFactory.ForResource(c.staticClusterResource).Informer()
-	inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj interface{}) { c.handleStaticResource(ctx) },
 		UpdateFunc: func(_, obj interface{}) { c.handleStaticResource(ctx) },
 		DeleteFunc: func(obj interface{}) { c.handleStaticResource(ctx) },
 	})
+	if err != nil {
+		panic("failed to add handlers: " + err.Error())
+	}
 	c.fileInformerFactory.Start(ctx.Done())
 }
 

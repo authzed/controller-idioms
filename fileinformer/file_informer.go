@@ -145,7 +145,7 @@ type FileSharedIndexInformer struct {
 	handlers                        []cache.ResourceEventHandler
 }
 
-var _ cache.SharedIndexInformer = &FileSharedIndexInformer{}
+var _ cache.SharedIndexInformer = (*FileSharedIndexInformer)(nil)
 
 // NewFileSharedIndexInformer creates a new informer watching the file
 // Note that currently all event handlers share the default resync period.
@@ -159,11 +159,13 @@ func NewFileSharedIndexInformer(log logr.Logger, fileName string, watcher *fsnot
 	}
 }
 
-func (f *FileSharedIndexInformer) AddEventHandler(handler cache.ResourceEventHandler) {
-	f.AddEventHandlerWithResyncPeriod(handler, f.defaultEventHandlerResyncPeriod)
+func (f *FileSharedIndexInformer) IsStopped() bool { return !f.started }
+
+func (f *FileSharedIndexInformer) AddEventHandler(handler cache.ResourceEventHandler) (cache.ResourceEventHandlerRegistration, error) {
+	return f.AddEventHandlerWithResyncPeriod(handler, f.defaultEventHandlerResyncPeriod)
 }
 
-func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, resyncPeriod time.Duration) {
+func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, resyncPeriod time.Duration) (cache.ResourceEventHandlerRegistration, error) {
 	f.RLock()
 	if f.started {
 		panic("cannot add event handlers after informer has started")
@@ -173,6 +175,14 @@ func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.
 	defer f.Unlock()
 	f.handlers = append(f.handlers, handler)
 	// TODO: non-default resync period
+
+	return nil, nil
+}
+
+// RemoveEventHandler implements cache.SharedInformer
+func (*FileSharedIndexInformer) RemoveEventHandler(handle cache.ResourceEventHandlerRegistration) error {
+	// TODO implement me
+	panic("unimplemented")
 }
 
 func (f *FileSharedIndexInformer) GetStore() cache.Store {
