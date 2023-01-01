@@ -250,8 +250,7 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 						continue
 					}
 					f.log.V(4).Info("filewatcher got event", "event", event.String(), "event_name", event.Name)
-					if event.Op&fsnotify.Write == fsnotify.Write ||
-						event.Op&fsnotify.Create == fsnotify.Create {
+					if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
 						f.RLock()
 						for _, h := range f.handlers {
 							h.OnAdd(fileName)
@@ -259,15 +258,14 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 						f.RUnlock()
 					}
 					// chmod is the event from a configmap reload in kube
-					if event.Op&fsnotify.Rename == fsnotify.Rename ||
-						event.Op&fsnotify.Chmod == fsnotify.Chmod {
+					if event.Has(fsnotify.Rename) || event.Has(fsnotify.Chmod) {
 						f.RLock()
 						for _, h := range f.handlers {
 							h.OnUpdate(fileName, fileName)
 						}
 						f.RUnlock()
 					}
-					if event.Op&fsnotify.Remove == fsnotify.Remove {
+					if event.Has(fsnotify.Remove) {
 						f.RLock()
 						for _, h := range f.handlers {
 							h.OnDelete(fileName)

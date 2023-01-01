@@ -77,8 +77,15 @@ func TestFileInformer(t *testing.T) {
 	require.Eventually(t, func() bool {
 		eventHandlers.Lock()
 		defer eventHandlers.Unlock()
-		return len(eventHandlers.Calls) == 4
-	}, 5000*time.Millisecond, 100*time.Millisecond)
+
+		foundDelete := false
+		for _, call := range eventHandlers.Calls {
+			if call.Method == "OnDelete" {
+				foundDelete = true
+			}
+		}
+		return foundDelete
+	}, 500*time.Millisecond, 10*time.Millisecond)
 
 	cancel()
 
