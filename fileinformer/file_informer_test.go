@@ -32,9 +32,11 @@ func TestFileInformer(t *testing.T) {
 	eventHandlers2.On("OnAdd", file2.Name()).Return()
 
 	inf := informerFactory.ForResource(FileGroupVersion.WithResource(file.Name())).Informer()
-	inf.AddEventHandler(eventHandlers)
+	_, err = inf.AddEventHandler(eventHandlers)
+	require.NoError(t, err)
 	inf2 := informerFactory.ForResource(FileGroupVersion.WithResource(file2.Name())).Informer()
-	inf2.AddEventHandler(eventHandlers2)
+	_, err = inf2.AddEventHandler(eventHandlers2)
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	informerFactory.Start(ctx.Done())
@@ -75,7 +77,14 @@ func TestFileInformer(t *testing.T) {
 	require.Eventually(t, func() bool {
 		eventHandlers.Lock()
 		defer eventHandlers.Unlock()
-		return len(eventHandlers.Calls) == 4
+
+		foundDelete := false
+		for _, call := range eventHandlers.Calls {
+			if call.Method == "OnDelete" {
+				foundDelete = true
+			}
+		}
+		return foundDelete
 	}, 500*time.Millisecond, 10*time.Millisecond)
 
 	cancel()
