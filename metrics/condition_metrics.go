@@ -103,7 +103,7 @@ func (c *ConditionStatusCollector[K]) CollectWithStability(ch chan<- metrics.Met
 		objectsWithCondition := map[string]uint16{}
 		for _, o := range objs {
 			objectName := types.NamespacedName{Name: o.GetName(), Namespace: o.GetNamespace()}.String()
-			for _, condition := range o.GetStatusConditions() {
+			for _, condition := range *o.GetStatusConditions() {
 				objectsWithCondition[condition.Type]++
 
 				timeInCondition := collectTime.Sub(condition.LastTransitionTime.Time)
