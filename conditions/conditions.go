@@ -32,8 +32,8 @@ type StatusWithConditions[S HasConditions] struct {
 
 // GetStatusConditions returns all status conditions.
 func (s *StatusWithConditions[S]) GetStatusConditions() *[]metav1.Condition {
-	var nilS S
-	if s.Status == nilS {
+	var zero S
+	if s.Status == zero {
 		return nil
 	}
 	return s.Status.GetStatusConditions()
