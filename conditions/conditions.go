@@ -16,11 +16,12 @@ type StatusConditions struct {
 }
 
 // GetStatusConditions returns a pointer to all status conditions.
-func (c StatusConditions) GetStatusConditions() *[]metav1.Condition {
+func (c *StatusConditions) GetStatusConditions() *[]metav1.Condition {
 	return &c.Conditions
 }
 
 type HasConditions interface {
+	comparable
 	GetStatusConditions() *[]metav1.Condition
 }
 
@@ -30,13 +31,20 @@ type StatusWithConditions[S HasConditions] struct {
 }
 
 // GetStatusConditions returns all status conditions.
-func (s StatusWithConditions[S]) GetStatusConditions() []metav1.Condition {
-	return *s.Status.GetStatusConditions()
+func (s *StatusWithConditions[S]) GetStatusConditions() *[]metav1.Condition {
+	var zero S
+	if s.Status == zero {
+		return nil
+	}
+	return s.Status.GetStatusConditions()
 }
 
 // FindStatusCondition finds the conditionType in conditions.
 func (s StatusWithConditions[S]) FindStatusCondition(conditionType string) *metav1.Condition {
-	return meta.FindStatusCondition(s.GetStatusConditions(), conditionType)
+	if s.GetStatusConditions() == nil {
+		return nil
+	}
+	return meta.FindStatusCondition(*s.GetStatusConditions(), conditionType)
 }
 
 // SetStatusCondition sets the corresponding condition in conditions to newCondition.
@@ -56,17 +64,26 @@ func (s StatusWithConditions[S]) RemoveStatusCondition(conditionType string) {
 
 // IsStatusConditionTrue returns true when the conditionType is present and set to `metav1.ConditionTrue`
 func (s StatusWithConditions[S]) IsStatusConditionTrue(conditionType string) bool {
-	return meta.IsStatusConditionTrue(s.GetStatusConditions(), conditionType)
+	if s.GetStatusConditions() == nil {
+		return false
+	}
+	return meta.IsStatusConditionTrue(*s.GetStatusConditions(), conditionType)
 }
 
 // IsStatusConditionFalse returns true when the conditionType is present and set to `metav1.ConditionFalse`
 func (s StatusWithConditions[S]) IsStatusConditionFalse(conditionType string) bool {
-	return meta.IsStatusConditionFalse(s.GetStatusConditions(), conditionType)
+	if s.GetStatusConditions() == nil {
+		return false
+	}
+	return meta.IsStatusConditionFalse(*s.GetStatusConditions(), conditionType)
 }
 
 // IsStatusConditionPresentAndEqual returns true when conditionType is present and equal to status.
 func (s StatusWithConditions[S]) IsStatusConditionPresentAndEqual(conditionType string, status metav1.ConditionStatus) bool {
-	return meta.IsStatusConditionPresentAndEqual(s.GetStatusConditions(), conditionType, status)
+	if s.GetStatusConditions() == nil {
+		return false
+	}
+	return meta.IsStatusConditionPresentAndEqual(*s.GetStatusConditions(), conditionType, status)
 }
 
 // IsStatusConditionChanged returns true if the passed in condition is different

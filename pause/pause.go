@@ -36,7 +36,8 @@ type HasStatusConditions interface {
 	metav1.Object
 	FindStatusCondition(conditionType string) *metav1.Condition
 	SetStatusCondition(metav1.Condition)
-	GetStatusConditions() []metav1.Condition
+	RemoveStatusCondition(conditionType string)
+	GetStatusConditions() *[]metav1.Condition
 }
 
 func IsPaused(object metav1.Object, pausedLabelKey string) bool {
@@ -80,15 +81,30 @@ func (p *Handler[K]) pause(ctx context.Context, object K) {
 	object.SetStatusCondition(NewPausedCondition(p.PausedLabelKey))
 	object.SetManagedFields(nil)
 	if err := p.PatchStatus(ctx, object); err != nil {
-		p.ctrls.MustValue(ctx).RequeueErr(err)
+		p.ctrls.MustValue(ctx).RequeueAPIErr(err)
 		return
 	}
 	p.ctrls.MustValue(ctx).Done()
 }
 
 func (p *Handler[K]) Handle(ctx context.Context) {
-	if obj := p.Object.MustValue(ctx); IsPaused(obj, p.PausedLabelKey) {
+	obj := p.Object.MustValue(ctx)
+	if IsPaused(obj, p.PausedLabelKey) {
 		p.pause(ctx, obj)
+		return
+	}
+
+	// unpaused and no paused condition, continue
+	if obj.FindStatusCondition(ConditionTypePaused) == nil {
+		p.Next.Handle(ctx)
+		return
+	}
+
+	// remove the paused condition
+	obj.RemoveStatusCondition(ConditionTypePaused)
+	obj.SetManagedFields(nil)
+	if err := p.PatchStatus(ctx, obj); err != nil {
+		p.ctrls.MustValue(ctx).RequeueAPIErr(err)
 		return
 	}
 	p.Next.Handle(ctx)
@@ -135,7 +151,7 @@ func (p *SelfPauseHandler[K]) Handle(ctx context.Context) {
 	object.SetLabels(labels)
 	if err := p.Patch(ctx, object); err != nil {
 		utilruntime.HandleError(err)
-		p.ctrls.MustValue(ctx).Requeue()
+		p.ctrls.MustValue(ctx).RequeueAPIErr(err)
 		return
 	}
 	p.ctrls.MustValue(ctx).Done()
