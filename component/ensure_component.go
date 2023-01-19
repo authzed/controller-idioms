@@ -55,11 +55,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 	ownedObjs := e.List(ctx, e.nn.MustValue(ctx))
 
 	newObj := e.newObj(ctx)
-	hash, err := e.Hash(newObj)
-	if err != nil {
-		e.ctrls.RequeueErr(ctx, err)
-		return
-	}
+	hash := e.Hash(newObj)
 	newObj = newObj.WithAnnotations(map[string]string{e.HashAnnotationKey: hash})
 
 	matchingObjs := make([]K, 0)
@@ -78,7 +74,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 
 	if len(matchingObjs) == 0 {
 		// apply if no matching KubeObject in cluster
-		_, err = e.applyObject(ctx, newObj)
+		_, err := e.applyObject(ctx, newObj)
 		if err != nil {
 			e.ctrls.RequeueErr(ctx, err)
 			return
