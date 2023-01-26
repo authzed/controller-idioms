@@ -12,7 +12,7 @@ func ExampleObject() {
 			"some": "data",
 		},
 	}
-	hash, _ := Object(configmap)
+	hash := Object(configmap)
 	fmt.Println(Equal(hash, "n688h54h56ch64bh677h55fh648hddq"))
 	// Output: true
 }
@@ -23,7 +23,7 @@ func ExampleSecureObject() {
 			"some": "data",
 		},
 	}
-	hash, _ := SecureObject(secret)
+	hash := SecureObject(secret)
 	fmt.Println(SecureEqual(hash, "n665hb8h667h68hfbhffh669h54dq"))
 	// Output: true
 }

@@ -13,13 +13,13 @@ import (
 )
 
 type (
-	ObjectHashFunc func(obj any) (string, error)
+	ObjectHashFunc func(obj any) string
 	EqualFunc      func(a, b string) bool
 )
 
 // ObjectHasher hashes and object and can compare hashes for equality
 type ObjectHasher interface {
-	Hash(obj any) (string, error)
+	Hash(obj any) string
 	Equal(a, b string) bool
 }
 
@@ -28,7 +28,7 @@ type hasher struct {
 	EqualFunc
 }
 
-func (h *hasher) Hash(obj interface{}) (string, error) {
+func (h *hasher) Hash(obj interface{}) string {
 	return h.ObjectHashFunc(obj)
 }
 
@@ -54,7 +54,7 @@ func NewObjectHash() ObjectHasher {
 
 // SecureObject canonicalizes the object before hashing with sha512 and then
 // with xxhash
-func SecureObject(obj interface{}) (string, error) {
+func SecureObject(obj interface{}) string {
 	hasher := sha512.New512_256()
 	printer := spew.ConfigState{
 		Indent:         " ",
@@ -62,17 +62,16 @@ func SecureObject(obj interface{}) (string, error) {
 		DisableMethods: true,
 		SpewKeys:       true,
 	}
-	_, err := printer.Fprintf(hasher, "%#v", obj)
-	if err != nil {
-		return "", err
-	}
+	// sha512's hasher.Write never returns an error, and Fprintf just passes up
+	// the underlying Write call's error, so we can safely ignore the error here
+	_, _ = printer.Fprintf(hasher, "%#v", obj)
 	// xxhash the sha512 hash to get a shorter value
 	xxhasher := xxhash.New()
-	_, err = xxhasher.Write(hasher.Sum(nil))
-	if err != nil {
-		return "", err
-	}
-	return rand.SafeEncodeString(fmt.Sprint(xxhasher.Sum(nil))), nil
+
+	// xxhash's hasher.Write never returns an error, so we can safely ignore
+	// the error here tpp
+	_, _ = xxhasher.Write(hasher.Sum(nil))
+	return rand.SafeEncodeString(fmt.Sprint(xxhasher.Sum(nil)))
 }
 
 // SecureEqual compares hashes safely
@@ -81,7 +80,7 @@ func SecureEqual(a, b string) bool {
 }
 
 // Object canonicalizes the object before hashing with xxhash
-func Object(obj interface{}) (string, error) {
+func Object(obj interface{}) string {
 	hasher := xxhash.New()
 	printer := spew.ConfigState{
 		Indent:         " ",
@@ -89,11 +88,11 @@ func Object(obj interface{}) (string, error) {
 		DisableMethods: true,
 		SpewKeys:       true,
 	}
-	_, err := printer.Fprintf(hasher, "%#v", obj)
-	if err != nil {
-		return "", err
-	}
-	return rand.SafeEncodeString(fmt.Sprint(hasher.Sum(nil))), nil
+
+	// xxhash's hasher.Write never returns an error, and Fprintf just passes up
+	// the underlying Write call's error, so we can safely ignore the error here
+	_, _ = printer.Fprintf(hasher, "%#v", obj)
+	return rand.SafeEncodeString(fmt.Sprint(hasher.Sum(nil)))
 }
 
 // Equal compares hashes safely
