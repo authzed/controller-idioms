@@ -25,6 +25,7 @@ type MyObject struct {
 	// this in a real controller)
 	conditions.StatusWithConditions[*MyObjectStatus] `json:"-"`
 }
+
 type MyObjectStatus struct {
 	ObservedGeneration          int64 `json:"observedGeneration,omitempty" protobuf:"varint,3,opt,name=observedGeneration"`
 	conditions.StatusConditions `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
