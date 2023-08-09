@@ -45,7 +45,7 @@ func NewFileInformerFactory(log logr.Logger) (*Factory, error) {
 	}, nil
 }
 
-// Start starts watching the files defined byt the informers.
+// Start starts watching the files defined by the informers.
 func (f *Factory) Start(stopCh <-chan struct{}) {
 	f.Lock()
 	defer f.Unlock()
@@ -57,6 +57,9 @@ func (f *Factory) Start(stopCh <-chan struct{}) {
 		}
 	}
 }
+
+// Shutdown stops watching the files defined by the informers.
+func (f *Factory) Shutdown() {}
 
 // ForResource will create an informer for a specific file.
 func (f *Factory) ForResource(gvr schema.GroupVersionResource) informers.GenericInformer {
@@ -165,7 +168,7 @@ func (f *FileSharedIndexInformer) AddEventHandler(handler cache.ResourceEventHan
 	return f.AddEventHandlerWithResyncPeriod(handler, f.defaultEventHandlerResyncPeriod)
 }
 
-func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, resyncPeriod time.Duration) (cache.ResourceEventHandlerRegistration, error) {
+func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, _ time.Duration) (cache.ResourceEventHandlerRegistration, error) {
 	f.RLock()
 	if f.started {
 		panic("cannot add event handlers after informer has started")
@@ -180,7 +183,7 @@ func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.
 }
 
 // RemoveEventHandler implements cache.SharedInformer
-func (*FileSharedIndexInformer) RemoveEventHandler(handle cache.ResourceEventHandlerRegistration) error {
+func (*FileSharedIndexInformer) RemoveEventHandler(_ cache.ResourceEventHandlerRegistration) error {
 	// TODO implement me
 	panic("unimplemented")
 }
@@ -212,7 +215,7 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 		// do an initial read
 		f.RLock()
 		for _, h := range f.handlers {
-			h.OnAdd(fileName)
+			h.OnAdd(fileName, true)
 		}
 		f.RUnlock()
 
@@ -253,7 +256,7 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 					if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
 						f.RLock()
 						for _, h := range f.handlers {
-							h.OnAdd(fileName)
+							h.OnAdd(fileName, false)
 						}
 						f.RUnlock()
 					}
@@ -303,12 +306,12 @@ func (f *FileSharedIndexInformer) LastSyncResourceVersion() string {
 	panic("implement me")
 }
 
-func (f *FileSharedIndexInformer) SetWatchErrorHandler(handler cache.WatchErrorHandler) error {
+func (f *FileSharedIndexInformer) SetWatchErrorHandler(_ cache.WatchErrorHandler) error {
 	// TODO implement me
 	panic("implement me")
 }
 
-func (f *FileSharedIndexInformer) AddIndexers(indexers cache.Indexers) error {
+func (f *FileSharedIndexInformer) AddIndexers(_ cache.Indexers) error {
 	// TODO implement me
 	panic("implement me")
 }
@@ -318,7 +321,7 @@ func (f *FileSharedIndexInformer) GetIndexer() cache.Indexer {
 	panic("implement me")
 }
 
-func (f *FileSharedIndexInformer) SetTransform(handler cache.TransformFunc) error {
+func (f *FileSharedIndexInformer) SetTransform(_ cache.TransformFunc) error {
 	// TODO implement me
 	panic("implement me")
 }

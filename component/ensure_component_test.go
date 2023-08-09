@@ -78,7 +78,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 						"example.com/component": "the-main-service-component",
 					},
 					Annotations: map[string]string{
-						hashKey: "n5d8h56h6dhc7h96h8h545h96q",
+						hashKey: "n649h58dh598h654hc4hc9hbbh689q",
 					},
 				}},
 			},
@@ -93,7 +93,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 						"example.com/component": "the-main-service-component",
 					},
 					Annotations: map[string]string{
-						hashKey: "n5d8h56h6dhc7h96h8h545h96q",
+						hashKey: "n649h58dh598h654hc4hc9hbbh689q",
 					},
 				},
 			}, &corev1.Service{ObjectMeta: metav1.ObjectMeta{
