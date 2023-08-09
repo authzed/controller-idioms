@@ -76,7 +76,7 @@ func (c *BasicController) HealthChecker() controllerhealthz.UnnamedHealthChecker
 	return apisrvhealthz.PingHealthz
 }
 
-func (c *BasicController) Start(ctx context.Context, numThreads int) {}
+func (c *BasicController) Start(_ context.Context, _ int) {}
 
 // OwnedResourceController implements a Controller that implements our standard
 // controller pattern:

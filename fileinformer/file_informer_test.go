@@ -100,7 +100,7 @@ type MockEventHandlers struct {
 
 var _ cache.ResourceEventHandler = &MockEventHandlers{}
 
-func (m *MockEventHandlers) OnAdd(obj interface{}) {
+func (m *MockEventHandlers) OnAdd(obj interface{}, _ bool) {
 	m.Lock()
 	defer m.Unlock()
 	m.Called(obj)

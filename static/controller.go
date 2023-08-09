@@ -12,10 +12,11 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/go-logr/logr"
+
 	"github.com/authzed/controller-idioms/bootstrap"
 	"github.com/authzed/controller-idioms/fileinformer"
 	"github.com/authzed/controller-idioms/manager"
-	"github.com/go-logr/logr"
 )
 
 type Controller[K bootstrap.KubeResourceObject] struct {
@@ -45,7 +46,7 @@ func NewStaticController[K bootstrap.KubeResourceObject](log logr.Logger, name s
 	}, nil
 }
 
-func (c *Controller[K]) Start(ctx context.Context, numThreads int) {
+func (c *Controller[K]) Start(ctx context.Context, _ int) {
 	inf := c.fileInformerFactory.ForResource(c.staticClusterResource).Informer()
 	_, err := inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj interface{}) { c.handleStaticResource(ctx) },

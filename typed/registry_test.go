@@ -148,7 +148,7 @@ func ExampleIndexerFor() {
 	// Output: []*v1.Secret example/mysecret
 }
 
-func TestRemove(t *testing.T) {
+func TestRemove(_ *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
