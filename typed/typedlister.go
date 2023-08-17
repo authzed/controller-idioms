@@ -101,9 +101,9 @@ func UnstructuredObjToTypedObj[K runtime.Object](obj runtime.Object) (K, error) 
 	return *typedObj, nil
 }
 
-// TypedObjToUnstructuredObj is a helper that converts a typed object
+// ObjToUnstructuredObj is a helper that converts a typed object
 // to unstructured.
-func TypedObjToUnstructuredObj(typedObj runtime.Object) (*unstructured.Unstructured, error) {
+func ObjToUnstructuredObj(typedObj runtime.Object) (*unstructured.Unstructured, error) {
 	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(typedObj)
 	if err != nil {
 		return nil, err

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,15 +26,21 @@ const (
 )
 
 // CRD installs the CRDs in the filesystem into the kube cluster configured by the rest config.
-func CRD(ctx context.Context, restConfig *rest.Config, crdFS fs.ReadDirFS, dir string) error {
-	crds := make([]*v1.CustomResourceDefinition, 0)
+// Deprecated: Use CRDs instead.
+func CRD(restConfig *rest.Config, crdFS fs.ReadDirFS, dir string) error {
+	return CRDs(context.Background(), restConfig, crdFS, dir)
+}
+
+// CRDs installs the CRDs in the filesystem into the kube cluster configured by the rest config.
+func CRDs(ctx context.Context, restConfig *rest.Config, crdFS fs.ReadDirFS, dir string) error {
+	crds := make([]*apiextensionsv1.CustomResourceDefinition, 0)
 
 	crdFiles, err := crdFS.ReadDir(dir)
 	if err != nil {
 		return err
 	}
 	for _, crdFile := range crdFiles {
-		var crd v1.CustomResourceDefinition
+		var crd apiextensionsv1.CustomResourceDefinition
 		file, err := crdFS.Open(path.Join(dir, crdFile.Name()))
 		if err != nil {
 			return err

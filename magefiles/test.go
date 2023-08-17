@@ -25,6 +25,9 @@ func (Test) Unit() error {
 // Integration Run integration tests
 func (Test) Integration() error {
 	mg.Deps(checkDocker)
-	return nil
-	// return goTest("./internal/services/integrationtesting/...", "-tags", "ci,docker", "-timeout", "15m")
+	_, _, _, err := provisionKind("controller-idioms-e2e")
+	if err != nil {
+		return err
+	}
+	return goTest("./...", "-tags", "e2e", "-timeout", "15m")
 }

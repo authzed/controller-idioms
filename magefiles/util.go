@@ -9,9 +9,15 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
+	"golang.org/x/exp/slices"
+
+	"sigs.k8s.io/kind/pkg/apis/config/v1alpha4"
+	kind "sigs.k8s.io/kind/pkg/cluster"
+	"sigs.k8s.io/kind/pkg/cmd"
 )
 
 // run go test in the root
@@ -204,4 +210,61 @@ func run(dir string, env map[string]string, stdout, stderr io.Writer, cmd string
 	}
 	err = c.Run()
 	return sh.CmdRan(err), sh.ExitStatus(err), err
+}
+
+func provisionKind(name string) (string, func() error, func(string) error, error) {
+	fmt.Sprintf("provisiong kind cluster %s", name)
+	provider := kind.NewProvider(
+		kind.ProviderWithLogger(cmd.NewLogger()),
+	)
+
+	kubeconfig := fmt.Sprintf("%s.kubeconfig", name)
+
+	deprovision := func() error {
+		if err := provider.Delete(name, kubeconfig); err != nil {
+			return err
+		}
+		if err := os.Remove(kubeconfig); err != nil {
+			return err
+		}
+		return nil
+	}
+	exportLogs := func(dir string) error {
+		return provider.CollectLogs(name, dir)
+	}
+
+	var existing []string
+	existing, err := provider.List()
+	if err != nil {
+		return kubeconfig, deprovision, exportLogs, err
+	}
+
+	if slices.Contains(existing, name) {
+		err := provider.ExportKubeConfig(name, kubeconfig, false)
+		return kubeconfig, deprovision, exportLogs, err
+	}
+
+	err = provider.Create(name,
+		kind.CreateWithWaitForReady(5*time.Minute),
+		kind.CreateWithV1Alpha4Config(&v1alpha4.Cluster{
+			TypeMeta: v1alpha4.TypeMeta{
+				Kind:       "Cluster",
+				APIVersion: "kind.x-k8s.io/v1alpha4",
+			},
+			Nodes: []v1alpha4.Node{{
+				Role: v1alpha4.ControlPlaneRole,
+			}},
+		}),
+	)
+	if err != nil {
+		err = fmt.Errorf("failed to create kind controller: %w", err)
+		return kubeconfig, deprovision, exportLogs, err
+	}
+	err = provider.ExportKubeConfig(name, kubeconfig, false)
+	if err != nil {
+		err = fmt.Errorf("failed to export kubeconfig: %w", err)
+		return kubeconfig, deprovision, exportLogs, err
+	}
+
+	return kubeconfig, deprovision, exportLogs, nil
 }
