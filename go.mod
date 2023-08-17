@@ -22,7 +22,6 @@ require (
 	k8s.io/klog/v2 v2.90.1
 	k8s.io/utils v0.0.0-20230209194617-a36077c30491
 	mvdan.cc/gofumpt v0.3.1
-	sigs.k8s.io/controller-runtime v0.14.1
 )
 
 require (
@@ -36,7 +35,6 @@ require (
 	github.com/coreos/go-systemd/v22 v22.4.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
 	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
-	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
