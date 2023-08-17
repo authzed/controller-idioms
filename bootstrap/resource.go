@@ -15,6 +15,7 @@ package bootstrap
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -29,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // KubeResourceObject is satisfied by any standard kube object.
@@ -78,7 +78,7 @@ func ResourceFromFile[O KubeResourceObject](ctx context.Context, fieldManager st
 			return hash, err
 		}
 
-		data, err := client.Apply.Data(objectDef)
+		data, err := json.Marshal(objectDef)
 		if err != nil {
 			return hash, err
 		}

@@ -100,3 +100,13 @@ func UnstructuredObjToTypedObj[K runtime.Object](obj runtime.Object) (K, error) 
 	}
 	return *typedObj, nil
 }
+
+// ObjToUnstructuredObj is a helper that converts a typed object
+// to unstructured.
+func ObjToUnstructuredObj(typedObj runtime.Object) (*unstructured.Unstructured, error) {
+	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(typedObj)
+	if err != nil {
+		return nil, err
+	}
+	return &unstructured.Unstructured{Object: object}, nil
+}

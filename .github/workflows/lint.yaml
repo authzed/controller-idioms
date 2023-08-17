@@ -7,17 +7,23 @@ on:  # yamllint disable-line rule:truthy
       - "main"
   pull_request:
     branches: ["*"]
+env:
+  GO_VERSION: "~1.20.7"
 jobs:
   go-lint:
     name: "Lint Go"
     runs-on: "ubuntu-latest"
     steps:
       - uses: "actions/checkout@v3"
-      - uses: "actions/setup-go@v3"
+      - uses: "authzed/actions/setup-go@main"
         with:
-          go-version: "~1.20"
-      - uses: "authzed/actions/gofumpt@main"
-      - uses: "authzed/actions/go-generate@main"
+          go-version: "${{ env.GO_VERSION }}"
+      - uses: "magefile/mage-action@v2"
+        with:
+          version: "latest"
+          args: "lint:go"
+      # golangci-lint is kept out of the module for now, since it needs to be
+      # run from root and would pollute the module's dependencies
       - uses: "authzed/actions/golangci-lint@main"
 
   extra-lint:
@@ -25,5 +31,10 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - uses: "actions/checkout@v3"
-      - uses: "authzed/actions/yaml-lint@main"
-      - uses: "authzed/actions/markdown-lint@main"
+      - uses: "authzed/actions/setup-go@main"
+        with:
+          go-version: "${{ env.GO_VERSION }}"
+      - uses: "magefile/mage-action@v2"
+        with:
+          version: "latest"
+          args: "lint:extra"
