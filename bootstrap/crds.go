@@ -98,17 +98,18 @@ func createCRDs(ctx context.Context, config *rest.Config, crds []*apiextensionsv
 }
 
 func waitForDiscovery(ctx context.Context, config *rest.Config, crds []*apiextensionsv1.CustomResourceDefinition) error {
-	gvrs := map[schema.GroupVersionResource]struct{}{}
+	resourcesByGV := make(map[string]map[string]struct{}, 0)
 	for _, crd := range crds {
 		for _, version := range crd.Spec.Versions {
 			if !version.Served {
 				continue
 			}
-			gvrs[schema.GroupVersionResource{
-				Group:    crd.Spec.Group,
-				Version:  version.Name,
-				Resource: crd.Spec.Names.Plural,
-			}] = struct{}{}
+			gv := schema.GroupVersion{Version: version.Name, Group: crd.Spec.Group}.String()
+			_, ok := resourcesByGV[gv]
+			if !ok {
+				resourcesByGV[gv] = make(map[string]struct{}, 0)
+			}
+			resourcesByGV[gv][crd.Spec.Names.Plural] = struct{}{}
 		}
 	}
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
@@ -123,15 +124,17 @@ func waitForDiscovery(ctx context.Context, config *rest.Config, crds []*apiexten
 		}
 
 		for _, gv := range serverGVRs {
+			if _, ok := resourcesByGV[gv.GroupVersion]; !ok {
+				continue
+			}
 			for _, r := range gv.APIResources {
-				delete(gvrs, schema.GroupVersionResource{
-					Group:    r.Group,
-					Version:  r.Version,
-					Resource: r.Name,
-				})
+				delete(resourcesByGV[gv.GroupVersion], r.Name)
+			}
+			if len(resourcesByGV[gv.GroupVersion]) == 0 {
+				delete(resourcesByGV, gv.GroupVersion)
 			}
 		}
 
-		return len(gvrs) == 0, nil
+		return len(resourcesByGV) == 0, nil
 	})
 }
