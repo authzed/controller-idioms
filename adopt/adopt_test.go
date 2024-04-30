@@ -46,7 +46,7 @@ func TestSecretAdopterHandler(t *testing.T) {
 		err    error
 	}
 
-	secretNotFound := func(name string) error {
+	secretNotFound := func(_ string) error {
 		return apierrors.NewNotFound(
 			corev1.SchemeGroupVersion.WithResource("secrets").GroupResource(),
 			"test")

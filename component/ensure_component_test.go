@@ -122,7 +122,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 			client := clientfake.NewSimpleDynamicClient(scheme, tt.existingServices...)
 			informerFactory := dynamicinformer.NewDynamicSharedInformerFactory(client, 0)
 			require.NoError(t, informerFactory.ForResource(serviceGVR).Informer().AddIndexers(map[string]cache.IndexFunc{
-				ownerIndex: func(obj interface{}) ([]string, error) {
+				ownerIndex: func(_ interface{}) ([]string, error) {
 					return []string{types.NamespacedName{Namespace: "test", Name: "owner"}.String()}, nil
 				},
 			}))

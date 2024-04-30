@@ -127,7 +127,7 @@ func (f Builder) Handler(id Key) Handler {
 }
 
 // NoopHandler is a handler that does nothing
-var NoopHandler = NewHandler(ContextHandlerFunc(func(ctx context.Context) {}), NextKey)
+var NoopHandler = NewHandler(ContextHandlerFunc(func(_ context.Context) {}), NextKey)
 
 // Key is used to identify a given Handler in a set of Handlers
 type Key string
