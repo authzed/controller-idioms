@@ -28,7 +28,7 @@ func ExampleNewOperations() {
 	}, cancel)
 
 	// typically called from a handler
-	handler.NewHandlerFromFunc(func(ctx context.Context) {
+	handler.NewHandlerFromFunc(func(_ context.Context) {
 		// do some work
 		operations.Done()
 	}, "example").Handle(ctx)
@@ -60,7 +60,7 @@ func ExampleNewQueueOperationsCtx() {
 	}, cancel))
 
 	// queue controls are passed via context
-	handler.NewHandlerFromFunc(func(ctx context.Context) {
+	handler.NewHandlerFromFunc(func(_ context.Context) {
 		// do some work
 		CtxQueue.Done()
 	}, "example").Handle(ctx)

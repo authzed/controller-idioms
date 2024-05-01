@@ -122,7 +122,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 			client := clientfake.NewSimpleDynamicClient(scheme, tt.existingServices...)
 			informerFactory := dynamicinformer.NewDynamicSharedInformerFactory(client, 0)
 			require.NoError(t, informerFactory.ForResource(serviceGVR).Informer().AddIndexers(map[string]cache.IndexFunc{
-				ownerIndex: func(obj interface{}) ([]string, error) {
+				ownerIndex: func(_ interface{}) ([]string, error) {
 					return []string{types.NamespacedName{Namespace: "test", Name: "owner"}.String()}, nil
 				},
 			}))
@@ -137,7 +137,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 					NewIndexedComponent(
 						indexer,
 						ownerIndex,
-						func(ctx context.Context) labels.Selector {
+						func(_ context.Context) labels.Selector {
 							return labels.SelectorFromSet(map[string]string{
 								"example.com/component": "the-main-service-component",
 							})
@@ -145,15 +145,15 @@ func TestEnsureServiceHandler(t *testing.T) {
 					hash.NewObjectHash(), hashKey),
 				ctxOwner,
 				queueOps,
-				func(ctx context.Context, apply *applycorev1.ServiceApplyConfiguration) (*corev1.Service, error) {
+				func(_ context.Context, _ *applycorev1.ServiceApplyConfiguration) (*corev1.Service, error) {
 					applyCalled = true
 					return nil, nil
 				},
-				func(ctx context.Context, nn types.NamespacedName) error {
+				func(_ context.Context, _ types.NamespacedName) error {
 					deleteCalled = true
 					return nil
 				},
-				func(ctx context.Context) *applycorev1.ServiceApplyConfiguration {
+				func(_ context.Context) *applycorev1.ServiceApplyConfiguration {
 					return applycorev1.Service("test", "test").
 						WithLabels(map[string]string{
 							"example.com/component": "the-main-service-component",

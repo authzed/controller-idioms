@@ -32,8 +32,8 @@ func ExampleNewOwnedResourceController() {
 
 	// the controller processes objects on the queue, but doesn't set up any
 	// informers by default.
-	controller := NewOwnedResourceController(klogr.New(), "my-controller", gvr, CtxQueue, registry, broadcaster, func(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) {
-		// process object
+	controller := NewOwnedResourceController(klogr.New(), "my-controller", gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
+		fmt.Println("processing", gvr, namespace, name)
 	})
 
 	mgr := NewManager(ctrlmanageropts.RecommendedDebuggingOptions().DebuggingConfiguration, ":", broadcaster, eventSink)
@@ -54,7 +54,8 @@ func TestControllerQueueDone(t *testing.T) {
 	broadcaster := record.NewBroadcaster()
 	eventSink := &typedcorev1.EventSinkImpl{Interface: fake.NewSimpleClientset().CoreV1().Events("")}
 
-	controller := NewOwnedResourceController(klogr.New(), "my-controller", gvr, CtxQueue, registry, broadcaster, func(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) {
+	controller := NewOwnedResourceController(klogr.New(), "my-controller", gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
+		fmt.Println("processing", gvr, namespace, name)
 	})
 
 	mgr := NewManager(ctrlmanageropts.RecommendedDebuggingOptions().DebuggingConfiguration, ":", broadcaster, eventSink)

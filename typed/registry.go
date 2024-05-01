@@ -94,13 +94,43 @@ func (r *Registry) NewFilteredDynamicSharedInformerFactory(key FactoryKey, clien
 }
 
 // ListerFor returns a typed Lister from a Registry
+// Deprecated: Use MustListerForKey instead
 func ListerFor[K runtime.Object](r *Registry, key RegistryKey) *Lister[K] {
-	return NewLister[K](r.ListerFor(key))
+	return MustListerForKey[K](r, key)
+}
+
+// MustListerForKey returns a typed Lister from a Registry, or panics if the key is not found
+func MustListerForKey[K runtime.Object](r *Registry, key RegistryKey) *Lister[K] {
+	return NewLister[K](r.MustListerForKey(key))
+}
+
+// ListerForKey returns a typed Lister from a Registry, or an error if the key is not found
+func ListerForKey[K runtime.Object](r *Registry, key RegistryKey) (*Lister[K], error) {
+	lister, err := r.ListerForKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return NewLister[K](lister), nil
 }
 
 // IndexerFor returns a typed Indexer from a Registry
+// Deprecated: Use MustIndexerForKey instead
 func IndexerFor[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
-	return NewIndexer[K](r.InformerFor(key).GetIndexer())
+	return MustIndexerForKey[K](r, key)
+}
+
+// MustIndexerForKey returns a typed Indexer from a Registry, or panics if the key is not found
+func MustIndexerForKey[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
+	return NewIndexer[K](r.MustIndexerForKey(key))
+}
+
+// IndexerForKey returns a typed Indexer from a Registry, or an error if the key is not found
+func IndexerForKey[K runtime.Object](r *Registry, key RegistryKey) (*Indexer[K], error) {
+	indexer, err := r.IndexerForKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return NewIndexer[K](indexer), nil
 }
 
 // Add adds a factory to the registry under the given FactoryKey
@@ -124,27 +154,95 @@ func (r *Registry) Remove(key FactoryKey) {
 }
 
 // InformerFactoryFor returns GVR-specific InformerFactory from the Registry.
+// Deprecated: use MustInformerFactoryForKey instead.
 func (r *Registry) InformerFactoryFor(key RegistryKey) informers.GenericInformer {
+	return r.MustInformerFactoryForKey(key)
+}
+
+// MustInformerFactoryForKey returns GVR-specific InformerFactory from the Registry
+// or panics if the key is not found.
+func (r *Registry) MustInformerFactoryForKey(key RegistryKey) informers.GenericInformer {
+	informer, err := r.InformerFactoryForKey(key)
+	if err != nil {
+		panic(err)
+	}
+	return informer
+}
+
+// InformerFactoryForKey returns GVR-specific InformerFactory from the Registry
+// or returns an error if the key is not found.
+func (r *Registry) InformerFactoryForKey(key RegistryKey) (informers.GenericInformer, error) {
 	r.RLock()
 	defer r.RUnlock()
 	factory, ok := r.factories[key.FactoryKey]
 	if !ok {
-		panic(fmt.Errorf("InformerFactoryFor called with unknown key %s", key))
+		return nil, fmt.Errorf("InformerFactoryFor called with unknown key %s", key)
 	}
-	return factory.ForResource(key.GroupVersionResource)
+	return factory.ForResource(key.GroupVersionResource), nil
 }
 
 // ListerFor returns the GVR-specific Lister from the Registry
+// Deprecated: use MustListerForKey instead.
 func (r *Registry) ListerFor(key RegistryKey) cache.GenericLister {
-	return r.InformerFactoryFor(key).Lister()
+	return r.MustInformerFactoryForKey(key).Lister()
+}
+
+// MustListerForKey returns the GVR-specific Lister from the Registry, or panics
+// if the key is not found.
+func (r *Registry) MustListerForKey(key RegistryKey) cache.GenericLister {
+	return r.MustInformerFactoryForKey(key).Lister()
+}
+
+// ListerForKey returns the GVR-specific Lister from the Registry, or an error
+// if the key is not found.
+func (r *Registry) ListerForKey(key RegistryKey) (cache.GenericLister, error) {
+	factory, err := r.InformerFactoryForKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return factory.Lister(), nil
 }
 
 // InformerFor returns the GVR-specific Informer from the Registry
+// Deprecated: use MustInformerForKey instead.
 func (r *Registry) InformerFor(key RegistryKey) cache.SharedIndexInformer {
-	return r.InformerFactoryFor(key).Informer()
+	return r.MustInformerFactoryForKey(key).Informer()
+}
+
+// MustInformerForKey returns the GVR-specific Informer from the Registry, or panics
+// if the key is not found.
+func (r *Registry) MustInformerForKey(key RegistryKey) cache.SharedIndexInformer {
+	return r.MustInformerFactoryForKey(key).Informer()
+}
+
+// InformerForKey returns the GVR-specific Informer from the Registry, or an error
+// if the key is not found.
+func (r *Registry) InformerForKey(key RegistryKey) (cache.SharedIndexInformer, error) {
+	factory, err := r.InformerFactoryForKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return factory.Informer(), nil
 }
 
 // IndexerFor returns the GVR-specific Indexer from the Registry
+// Deprecated: use MustIndexerForKey instead.
 func (r *Registry) IndexerFor(key RegistryKey) cache.Indexer {
-	return r.InformerFactoryFor(key).Informer().GetIndexer()
+	return r.MustInformerForKey(key).GetIndexer()
+}
+
+// MustIndexerForKey returns the GVR-specific Indexer from the Registry, or panics
+// if the key is not found.
+func (r *Registry) MustIndexerForKey(key RegistryKey) cache.Indexer {
+	return r.MustInformerForKey(key).GetIndexer()
+}
+
+// IndexerForKey returns the GVR-specific Indexer from the Registry, or an error
+// if the key is not found.
+func (r *Registry) IndexerForKey(key RegistryKey) (cache.Indexer, error) {
+	informer, err := r.InformerForKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return informer.GetIndexer(), nil
 }

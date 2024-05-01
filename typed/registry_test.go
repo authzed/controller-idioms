@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -92,7 +93,7 @@ func ExampleListerFor() {
 
 	dependentSecretKey := NewRegistryKey(dependentObjectKey, secretGVR)
 
-	cachedSecret, _ := ListerFor[*corev1.Secret](registry, dependentSecretKey).ByNamespace("example").Get("mysecret")
+	cachedSecret, _ := MustListerForKey[*corev1.Secret](registry, dependentSecretKey).ByNamespace("example").Get("mysecret")
 	fmt.Printf("%T %s/%s", cachedSecret, cachedSecret.GetNamespace(), cachedSecret.GetName())
 	// Output: *v1.Secret example/mysecret
 }
@@ -131,7 +132,7 @@ func ExampleIndexerFor() {
 	const indexName = "ExampleIndex"
 	const constantIndexValue = "indexVal"
 	if err := informerFactory.ForResource(secretGVR).Informer().AddIndexers(map[string]cache.IndexFunc{
-		indexName: func(obj interface{}) ([]string, error) {
+		indexName: func(_ interface{}) ([]string, error) {
 			return []string{constantIndexValue}, nil
 		},
 	}); err != nil {
@@ -143,7 +144,7 @@ func ExampleIndexerFor() {
 
 	dependentSecretKey := NewRegistryKey(dependentObjectKey, secretGVR)
 
-	matchingCachedSecrets, _ := IndexerFor[*corev1.Secret](registry, dependentSecretKey).ByIndex(indexName, constantIndexValue)
+	matchingCachedSecrets, _ := MustIndexerForKey[*corev1.Secret](registry, dependentSecretKey).ByIndex(indexName, constantIndexValue)
 	fmt.Printf("%T %s/%s", matchingCachedSecrets, matchingCachedSecrets[0].GetNamespace(), matchingCachedSecrets[0].GetName())
 	// Output: []*v1.Secret example/mysecret
 }
@@ -175,4 +176,70 @@ func TestRemove(_ *testing.T) {
 	informerFactory.WaitForCacheSync(ctx.Done())
 
 	registry.Remove(dependentObjectKey)
+}
+
+func TestForKey(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registry := NewRegistry()
+
+	secretGVR := corev1.SchemeGroupVersion.WithResource("secrets")
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
+	client := fake.NewSimpleDynamicClient(scheme)
+	dependentObjectKey := NewFactoryKey("my-controller", "localCluster", "dependentObjects")
+	informerFactory := registry.MustNewFilteredDynamicSharedInformerFactory(
+		dependentObjectKey,
+		client,
+		0,
+		metav1.NamespaceAll,
+		func(options *metav1.ListOptions) {
+			options.LabelSelector = "my-controller.com/related-to=myobjecttype"
+		},
+	)
+	informerFactory.ForResource(secretGVR)
+	informerFactory.Start(ctx.Done())
+	informerFactory.WaitForCacheSync(ctx.Done())
+
+	// good key works
+	dependentSecretKey := NewRegistryKey(dependentObjectKey, secretGVR)
+	require.NotPanics(t, func() {
+		registry.MustInformerFactoryForKey(dependentSecretKey)
+		registry.MustListerForKey(dependentSecretKey)
+		registry.MustIndexerForKey(dependentSecretKey)
+		MustListerForKey[*corev1.Secret](registry, dependentSecretKey)
+		MustIndexerForKey[*corev1.Secret](registry, dependentSecretKey)
+	})
+
+	// bad key panics Must*ForKey
+	badKey := NewRegistryKey(NewFactoryKey("other-controller", "othercluster", "dependentObjects"), corev1.SchemeGroupVersion.WithResource("pods"))
+	require.Panics(t, func() {
+		registry.MustInformerFactoryForKey(badKey)
+	})
+	require.Panics(t, func() {
+		registry.MustListerForKey(badKey)
+	})
+	require.Panics(t, func() {
+		registry.MustIndexerForKey(badKey)
+	})
+	require.Panics(t, func() {
+		MustListerForKey[*corev1.Pod](registry, badKey)
+	})
+	require.Panics(t, func() {
+		MustIndexerForKey[*corev1.Pod](registry, badKey)
+	})
+
+	// bad key returns error for *ForKey
+	_, err := registry.InformerFactoryForKey(badKey)
+	require.Error(t, err)
+	_, err = registry.ListerForKey(badKey)
+	require.Error(t, err)
+	_, err = registry.IndexerForKey(badKey)
+	require.Error(t, err)
+	_, err = ListerForKey[*corev1.Pod](registry, badKey)
+	require.Error(t, err)
+	_, err = IndexerForKey[*corev1.Pod](registry, badKey)
+	require.Error(t, err)
 }
