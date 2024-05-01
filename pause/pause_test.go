@@ -44,7 +44,7 @@ func ExampleNewPauseContextHandler() {
 		queueOperations.Key,
 		"example.com/paused",
 		ctxObject,
-		func(ctx context.Context, patch *MyObject) error {
+		func(_ context.Context, _ *MyObject) error {
 			// update status
 			return nil
 		},
@@ -184,7 +184,7 @@ func TestPauseHandler(t *testing.T) {
 			ctrls := &fake.FakeInterface{}
 			patchCalled := false
 
-			patchStatus := func(ctx context.Context, patch *MyObject) error {
+			patchStatus := func(_ context.Context, patch *MyObject) error {
 				patchCalled = true
 
 				if tt.patchError != nil {
@@ -209,7 +209,7 @@ func TestPauseHandler(t *testing.T) {
 			ctx = ctxMyObject.WithValue(ctx, tt.obj)
 			var called handler.Key
 
-			NewPauseContextHandler(queueOps.Key, PauseLabelKey, ctxMyObject, patchStatus, handler.ContextHandlerFunc(func(ctx context.Context) {
+			NewPauseContextHandler(queueOps.Key, PauseLabelKey, ctxMyObject, patchStatus, handler.ContextHandlerFunc(func(_ context.Context) {
 				called = nextKey
 			})).Handle(ctx)
 

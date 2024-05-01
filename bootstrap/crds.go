@@ -117,7 +117,7 @@ func waitForDiscovery(ctx context.Context, config *rest.Config, crds []*apiexten
 		return err
 	}
 
-	return wait.PollUntilContextTimeout(ctx, crdInstallPollInterval, maxCRDInstallTime, true, func(ctx context.Context) (done bool, err error) {
+	return wait.PollUntilContextTimeout(ctx, crdInstallPollInterval, maxCRDInstallTime, true, func(_ context.Context) (done bool, err error) {
 		_, serverGVRs, err := discoveryClient.ServerGroupsAndResources()
 		if err != nil {
 			return false, nil

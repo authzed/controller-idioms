@@ -86,11 +86,11 @@ const Owned = "owned"
 
 var (
 	// AlwaysExistsFunc is an ExistsFunc that always returns nil
-	AlwaysExistsFunc ExistsFunc = func(ctx context.Context, nn types.NamespacedName) error {
+	AlwaysExistsFunc ExistsFunc = func(_ context.Context, _ types.NamespacedName) error {
 		return nil
 	}
 	// NoopObjectMissingFunc is an ObjectMissing func that does nothing
-	NoopObjectMissingFunc = func(ctx context.Context, err error) {}
+	NoopObjectMissingFunc = func(_ context.Context, _ error) {}
 )
 
 // AdoptionHandler implements handler.Handler to "adopt" an existing resource

@@ -324,21 +324,21 @@ func TestSecretAdopterHandler(t *testing.T) {
 			applyCallIndex := 0
 			s := NewSecretAdoptionHandler(
 				recorder,
-				func(ctx context.Context) (*corev1.Secret, error) {
+				func(_ context.Context) (*corev1.Secret, error) {
 					return tt.secretInCache, tt.cacheErr
 				},
-				func(ctx context.Context, err error) {
+				func(_ context.Context, err error) {
 					require.Equal(t, tt.expectObjectMissingErr, err)
 				},
 				typed.NewIndexer[*corev1.Secret](indexer),
-				func(ctx context.Context, secret *applycorev1.SecretApplyConfiguration, opts metav1.ApplyOptions) (result *corev1.Secret, err error) {
+				func(_ context.Context, secret *applycorev1.SecretApplyConfiguration, _ metav1.ApplyOptions) (result *corev1.Secret, err error) {
 					defer func() { applyCallIndex++ }()
 					call := tt.applyCalls[applyCallIndex]
 					call.called = true
 					require.Equal(t, call.input, secret, "error on call %d", applyCallIndex)
 					return call.result, call.err
 				},
-				func(ctx context.Context, nn types.NamespacedName) error {
+				func(_ context.Context, _ types.NamespacedName) error {
 					return tt.secretExistsErr
 				},
 				handler.NewHandlerFromFunc(func(ctx context.Context) {
