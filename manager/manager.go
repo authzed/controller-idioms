@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -45,6 +46,9 @@ type Manager struct {
 // information for its managed set of controllers.
 func NewManager(debugConfig *componentconfig.DebuggingConfiguration, address string, broadcaster record.EventBroadcaster, sink record.EventSink) *Manager {
 	handler := healthz.NewMutableHealthzHandler()
+	if broadcaster == nil {
+		broadcaster = record.NewBroadcaster()
+	}
 	return &Manager{
 		healthzHandler: handler,
 		srv: &http.Server{
@@ -61,13 +65,15 @@ func NewManager(debugConfig *componentconfig.DebuggingConfiguration, address str
 // Start starts a set of controllers in an errgroup and serves
 // health / debug endpoints for them. It stops when the context is cancelled.
 // It will only have an effect the first time it is called.
-func (m *Manager) Start(ctx context.Context, controllers ...Controller) error {
+func (m *Manager) Start(ctx context.Context, readyc chan<- struct{}, controllers ...Controller) error {
 	m.RLock()
 	if m.errG != nil {
+		m.RUnlock()
 		return fmt.Errorf("manager already started")
 	}
 	m.RUnlock()
 
+	var startErr error
 	m.once.Do(func() {
 		m.Lock()
 		m.errG, ctx = errgroup.WithContext(ctx)
@@ -76,33 +82,57 @@ func (m *Manager) Start(ctx context.Context, controllers ...Controller) error {
 
 		// start controllers
 		if err := m.Go(controllers...); err != nil {
+			startErr = err
 			return
 		}
 
 		// start health / debug server
 		m.errG.Go(func() error {
-			return m.srv.ListenAndServe()
+			if err := m.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return err
+			}
+			return nil
 		})
 
 		// start broadcaster
 		m.errG.Go(func() error {
 			m.broadcaster.StartStructuredLogging(2)
-			m.broadcaster.StartRecordingToSink(m.sink)
+			if m.sink != nil {
+				m.broadcaster.StartRecordingToSink(m.sink)
+			}
 			return nil
 		})
 
-		// stop health / debug server when context is cancelled
+		// stop health / debug server and all controllers when context is
+		// cancelled
 		m.errG.Go(func() error {
 			<-ctx.Done()
 			m.broadcaster.Shutdown()
-			return m.srv.Shutdown(ctx)
+
+			m.Lock()
+			for ctrl, cancel := range m.cancelFuncs {
+				cancel()
+				delete(m.cancelFuncs, ctrl)
+			}
+			m.Unlock()
+
+			// no context passed to shutdown; the errg will block
+			// until the server is closed
+			return m.srv.Shutdown(context.Background())
 		})
 	})
+
+	close(readyc)
+
+	if startErr != nil {
+		return startErr
+	}
+
 	if err := m.errG.Wait(); err != nil {
 		return err
 	}
 
-	return ctx.Err()
+	return nil
 }
 
 // Go adds controllers into the existing manager's errgroup
@@ -110,6 +140,7 @@ func (m *Manager) Go(controllers ...Controller) error {
 	m.RLock()
 	errG := m.errG
 	if errG == nil {
+		m.RUnlock()
 		return fmt.Errorf("cannot add controllers to an unstarted manager")
 	}
 	ctx := m.errGCtx
