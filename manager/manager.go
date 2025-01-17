@@ -68,8 +68,6 @@ func (m *Manager) Start(ctx context.Context, controllers ...Controller) error {
 	}
 	m.RUnlock()
 
-	broadcaster := record.NewBroadcaster()
-
 	m.once.Do(func() {
 		m.Lock()
 		m.errG, ctx = errgroup.WithContext(ctx)
@@ -88,8 +86,8 @@ func (m *Manager) Start(ctx context.Context, controllers ...Controller) error {
 
 		// start broadcaster
 		m.errG.Go(func() error {
-			broadcaster.StartStructuredLogging(2)
-			broadcaster.StartRecordingToSink(m.sink)
+			m.broadcaster.StartStructuredLogging(2)
+			m.broadcaster.StartRecordingToSink(m.sink)
 			return nil
 		})
 
