@@ -43,7 +43,9 @@ func ExampleNewOwnedResourceController() {
 	mgr := NewManager(ctrlmanageropts.RecommendedDebuggingOptions().DebuggingConfiguration, ":", broadcaster, eventSink)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Millisecond)
 	defer cancel()
-	_ = mgr.Start(ctx, controller)
+	readyc := make(chan struct{})
+	_ = mgr.Start(ctx, readyc, controller)
+	<-readyc
 	// Output:
 }
 
@@ -65,9 +67,12 @@ func TestControllerQueueDone(t *testing.T) {
 	mgr := NewManager(ctrlmanageropts.RecommendedDebuggingOptions().DebuggingConfiguration, ":", broadcaster, eventSink)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	readyc := make(chan struct{})
 	go func() {
-		_ = mgr.Start(ctx, controller)
+		_ = mgr.Start(ctx, readyc, controller)
 	}()
+	<-readyc
 
 	// add many keys
 	for i := 0; i < 10; i++ {
@@ -105,9 +110,11 @@ func TestControllerEventsBroadcast(t *testing.T) {
 	mgr := NewManager(ctrlmanageropts.RecommendedDebuggingOptions().DebuggingConfiguration, ":8888", broadcaster, eventSink)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	readyc := make(chan struct{})
 	go func() {
-		_ = mgr.Start(ctx, controller)
+		_ = mgr.Start(ctx, readyc, controller)
 	}()
+	<-readyc
 	require.Eventually(t, healthCheckPassing(), 1*time.Second, 50*time.Millisecond)
 
 	recorder.Event(&v1.ObjectReference{Namespace: "test", Name: "a"}, v1.EventTypeNormal, "test", "test")
