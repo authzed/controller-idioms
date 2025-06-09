@@ -165,10 +165,12 @@ func NewFileSharedIndexInformer(log logr.Logger, fileName string, watcher *fsnot
 func (f *FileSharedIndexInformer) IsStopped() bool { return !f.started }
 
 func (f *FileSharedIndexInformer) AddEventHandler(handler cache.ResourceEventHandler) (cache.ResourceEventHandlerRegistration, error) {
-	return f.AddEventHandlerWithResyncPeriod(handler, f.defaultEventHandlerResyncPeriod)
+	return f.AddEventHandlerWithOptions(handler, cache.HandlerOptions{
+		ResyncPeriod: &f.defaultEventHandlerResyncPeriod,
+	})
 }
 
-func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, _ time.Duration) (cache.ResourceEventHandlerRegistration, error) {
+func (f *FileSharedIndexInformer) AddEventHandlerWithOptions(handler cache.ResourceEventHandler, options cache.HandlerOptions) (cache.ResourceEventHandlerRegistration, error) {
 	f.RLock()
 	if f.started {
 		panic("cannot add event handlers after informer has started")
@@ -180,6 +182,12 @@ func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.
 	// TODO: non-default resync period
 
 	return nil, nil
+}
+
+func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, _ time.Duration) (cache.ResourceEventHandlerRegistration, error) {
+	return f.AddEventHandlerWithOptions(handler, cache.HandlerOptions{
+		ResyncPeriod: &f.defaultEventHandlerResyncPeriod,
+	})
 }
 
 // RemoveEventHandler implements cache.SharedInformer
@@ -196,6 +204,10 @@ func (f *FileSharedIndexInformer) GetStore() cache.Store {
 func (f *FileSharedIndexInformer) GetController() cache.Controller {
 	// TODO implement me
 	panic("implement me")
+}
+
+func (f *FileSharedIndexInformer) RunWithContext(ctx context.Context) {
+	f.Run(ctx.Done())
 }
 
 func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
@@ -307,6 +319,11 @@ func (f *FileSharedIndexInformer) LastSyncResourceVersion() string {
 }
 
 func (f *FileSharedIndexInformer) SetWatchErrorHandler(_ cache.WatchErrorHandler) error {
+	// TODO implement me
+	panic("implement me")
+}
+
+func (f *FileSharedIndexInformer) SetWatchErrorHandlerWithContext(handler cache.WatchErrorHandlerWithContext) error {
 	// TODO implement me
 	panic("implement me")
 }

@@ -60,7 +60,7 @@ func (c *Controller[K]) Start(ctx context.Context, _ int) {
 }
 
 func (c *Controller[K]) handleStaticResource(ctx context.Context) {
-	hash, err := bootstrap.ResourceFromFile[K](ctx, c.Name(), c.gvr, c.client, c.path, c.lastStaticHash.Load())
+	hash, err := bootstrap.ResourceFromFile[K](ctx, c.BasicController.Name(), c.gvr, c.client, c.path, c.lastStaticHash.Load())
 	if err != nil {
 		utilruntime.HandleError(err)
 		return
