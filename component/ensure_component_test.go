@@ -2,6 +2,7 @@ package component
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,7 @@ type MyObject struct {
 }
 type MyObjectStatus struct {
 	ObservedGeneration          int64 `json:"observedGeneration,omitempty" protobuf:"varint,3,opt,name=observedGeneration"`
-	conditions.StatusConditions `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	conditions.StatusConditions `json:"conditions,omitempty"         patchMergeKey:"type"                            patchStrategy:"merge" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 func TestEnsureServiceHandler(t *testing.T) {
@@ -78,7 +79,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 						"example.com/component": "the-main-service-component",
 					},
 					Annotations: map[string]string{
-						hashKey: "n649h58dh598h654hc4hc9hbbh689q",
+						hashKey: "76251aaa1ff6c84f",
 					},
 				}},
 			},
@@ -93,7 +94,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 						"example.com/component": "the-main-service-component",
 					},
 					Annotations: map[string]string{
-						hashKey: "n649h58dh598h654hc4hc9hbbh689q",
+						hashKey: "76251aaa1ff6c84f",
 					},
 				},
 			}, &corev1.Service{ObjectMeta: metav1.ObjectMeta{
@@ -108,7 +109,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
 			ctrls := &fake.FakeInterface{}
@@ -145,8 +146,9 @@ func TestEnsureServiceHandler(t *testing.T) {
 					hash.NewObjectHash(), hashKey),
 				ctxOwner,
 				queueOps,
-				func(_ context.Context, _ *applycorev1.ServiceApplyConfiguration) (*corev1.Service, error) {
+				func(_ context.Context, sac *applycorev1.ServiceApplyConfiguration) (*corev1.Service, error) {
 					applyCalled = true
+					fmt.Print(sac.Annotations)
 					return nil, nil
 				},
 				func(_ context.Context, _ types.NamespacedName) error {

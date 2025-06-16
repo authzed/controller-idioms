@@ -14,7 +14,7 @@ func ExampleNewOperations() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 
 	// queue has an object in it
 	queue.Add("current_key")
@@ -45,7 +45,7 @@ func ExampleNewQueueOperationsCtx() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 
 	// queue has an object in it
 	queue.Add("current_key")

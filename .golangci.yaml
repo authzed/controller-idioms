@@ -1,8 +1,7 @@
 ---
+version: "2"
 run:
-  timeout: "5m"
-output:
-  sort-results: true
+  allow-parallel-runners: true
 linters:
   enable:
     - "bidichk"
@@ -10,11 +9,9 @@ linters:
     - "errcheck"
     - "errname"
     - "errorlint"
-    - "gofumpt"
-    - "goimports"
+    - "gocritic"
     - "goprintffuncname"
     - "gosec"
-    - "gosimple"
     - "govet"
     - "importas"
     - "ineffassign"
@@ -24,11 +21,45 @@ linters:
     - "promlinter"
     - "revive"
     - "rowserrcheck"
+    - "spancheck"
     - "staticcheck"
-    - "stylecheck"
-    - "tenv"
-    - "typecheck"
+    - "tagalign"
+    - "testifylint"
+    - "tparallel"
     - "unconvert"
-    - "unused"
+    - "usetesting"
     - "wastedassign"
     - "whitespace"
+    - "unused"
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+  exclusions:
+    generated: "lax"
+    presets:
+      - "comments"
+      - "common-false-positives"
+      - "legacy"
+      - "std-error-handling"
+formatters:
+  enable:
+    - "gci"
+    - "gofumpt"
+    - "goimports"
+  settings:
+    gci:
+      sections:
+        - "standard"
+        - "default"
+        - "prefix(github.com/authzed)"
+        - "localmodule"
+    goimports:
+      local-prefixes:
+        - "github.com/authzed/controller-idioms"
+  exclusions:
+    generated: "lax"
+    paths:
+      - "third_party$"
+      - "builtin$"
+      - "examples$"

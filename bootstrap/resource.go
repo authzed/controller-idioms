@@ -29,7 +29,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 // KubeResourceObject is satisfied by any standard kube object.
@@ -40,7 +40,7 @@ type KubeResourceObject interface {
 
 // ResourceFromFile creates a KubeResourceObject with the given config file
 func ResourceFromFile[O KubeResourceObject](ctx context.Context, fieldManager string, gvr schema.GroupVersionResource, dclient dynamic.Interface, configPath string, lastHash uint64) (uint64, error) {
-	if len(configPath) <= 0 {
+	if len(configPath) == 0 {
 		logr.FromContextOrDiscard(ctx).V(4).Info("bootstrap file path not specified")
 		return 0, nil
 	}
@@ -86,7 +86,7 @@ func ResourceFromFile[O KubeResourceObject](ctx context.Context, fieldManager st
 		_, err = dclient.
 			Resource(gvr).
 			Namespace(objectDef.GetNamespace()).
-			Patch(ctx, objectDef.GetName(), types.ApplyPatchType, data, metav1.PatchOptions{FieldManager: fieldManager, Force: pointer.Bool(true)})
+			Patch(ctx, objectDef.GetName(), types.ApplyPatchType, data, metav1.PatchOptions{FieldManager: fieldManager, Force: ptr.To(true)})
 		if err != nil {
 			return hash, err
 		}

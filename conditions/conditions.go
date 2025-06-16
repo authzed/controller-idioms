@@ -12,7 +12,7 @@ import (
 type StatusConditions struct {
 	// Conditions for the current state of the resource.
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchMergeKey:"type" patchStrategy:"merge" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 // GetStatusConditions returns a pointer to all status conditions.

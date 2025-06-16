@@ -10,17 +10,17 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2/klogr"
+	"k8s.io/klog/v2/textlogger"
 )
 
 func TestFileInformer(t *testing.T) {
-	informerFactory, err := NewFileInformerFactory(klogr.New())
+	informerFactory, err := NewFileInformerFactory(textlogger.NewLogger(textlogger.NewConfig()))
 	require.NoError(t, err)
 
-	file, err := os.CreateTemp("", "watched-file")
+	file, err := os.CreateTemp(t.TempDir(), "watched-file")
 	require.NoError(t, err)
 
-	file2, err := os.CreateTemp("", "watched-file")
+	file2, err := os.CreateTemp(t.TempDir(), "watched-file")
 	require.NoError(t, err)
 	defer require.NoError(t, file2.Close())
 
@@ -38,15 +38,15 @@ func TestFileInformer(t *testing.T) {
 	_, err = inf2.AddEventHandler(eventHandlers2)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	informerFactory.Start(ctx.Done())
 	informerFactory.WaitForCacheSync(ctx.Done())
 
 	eventHandlers.Lock()
-	require.Equal(t, len(eventHandlers.Calls), 1)
+	require.Len(t, eventHandlers.Calls, 1)
 	eventHandlers.Unlock()
 	eventHandlers2.Lock()
-	require.Equal(t, len(eventHandlers2.Calls), 1)
+	require.Len(t, eventHandlers2.Calls, 1)
 	eventHandlers2.Unlock()
 
 	// expect an OnAdd when the file is written

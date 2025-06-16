@@ -16,7 +16,7 @@ import (
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 	ctrlmanageropts "k8s.io/controller-manager/options"
-	"k8s.io/klog/v2/klogr"
+	"k8s.io/klog/v2/textlogger"
 
 	"github.com/authzed/controller-idioms/cachekeys"
 	"github.com/authzed/controller-idioms/queue"
@@ -36,7 +36,7 @@ func ExampleNewOwnedResourceController() {
 
 	// the controller processes objects on the queue, but doesn't set up any
 	// informers by default.
-	controller := NewOwnedResourceController(klogr.New(), "my-controller", gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
+	controller := NewOwnedResourceController(textlogger.NewLogger(textlogger.NewConfig()), "my-controller", gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
 		fmt.Println("processing", gvr, namespace, name)
 	})
 
@@ -60,12 +60,12 @@ func TestControllerQueueDone(t *testing.T) {
 	broadcaster := record.NewBroadcaster()
 	eventSink := newFakeEventSink()
 
-	controller := NewOwnedResourceController(klogr.New(), "my-controller", gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
+	controller := NewOwnedResourceController(textlogger.NewLogger(textlogger.NewConfig()), "my-controller", gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
 		fmt.Println("processing", gvr, namespace, name)
 	})
 
 	mgr := NewManager(ctrlmanageropts.RecommendedDebuggingOptions().DebuggingConfiguration, ":", broadcaster, eventSink)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	readyc := make(chan struct{})
@@ -103,12 +103,12 @@ func TestControllerEventsBroadcast(t *testing.T) {
 	eventSink := newFakeEventSink()
 	recorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "my-controller"})
 
-	controller := NewOwnedResourceController(klogr.New(), "my-controller", gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
+	controller := NewOwnedResourceController(textlogger.NewLogger(textlogger.NewConfig()), "my-controller", gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
 		fmt.Println("processing", gvr, namespace, name)
 	})
 
 	mgr := NewManager(ctrlmanageropts.RecommendedDebuggingOptions().DebuggingConfiguration, ":8888", broadcaster, eventSink)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	readyc := make(chan struct{})
 	go func() {

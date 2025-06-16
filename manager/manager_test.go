@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/component-base/config"
-	"k8s.io/klog/v2/klogr"
+	"k8s.io/klog/v2/textlogger"
 
 	"github.com/authzed/controller-idioms/queue"
 	"github.com/authzed/controller-idioms/typed"
@@ -19,7 +19,7 @@ import (
 
 func TestManager(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	m := NewManager(&config.DebuggingConfiguration{
 		EnableProfiling:           false,
@@ -27,10 +27,12 @@ func TestManager(t *testing.T) {
 	}, ":"+getFreePort(t), nil, nil)
 
 	ready := make(chan struct{})
+	var err error
 	go func() {
-		require.NoError(t, m.Start(ctx, ready, testController(t, "a")))
+		err = m.Start(ctx, ready, testController(t, "a"))
 	}()
 	<-ready
+	require.NoError(t, err)
 
 	requireCancelFnCount(t, m, 1)
 
@@ -78,7 +80,7 @@ func testController(t *testing.T, name string) Controller {
 	registry := typed.NewRegistry()
 	broadcaster := record.NewBroadcaster()
 
-	return NewOwnedResourceController(klogr.New(), name, gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
+	return NewOwnedResourceController(textlogger.NewLogger(textlogger.NewConfig()), name, gvr, CtxQueue, registry, broadcaster, func(_ context.Context, gvr schema.GroupVersionResource, namespace, name string) {
 		t.Log("processing", gvr, namespace, name)
 	})
 }

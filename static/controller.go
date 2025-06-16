@@ -7,12 +7,11 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
-
-	"github.com/go-logr/logr"
 
 	"github.com/authzed/controller-idioms/bootstrap"
 	"github.com/authzed/controller-idioms/fileinformer"

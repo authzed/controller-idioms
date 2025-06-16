@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -31,8 +32,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/controller-manager/controller"
 	controllerhealthz "k8s.io/controller-manager/pkg/healthz"
-
-	"github.com/go-logr/logr"
 
 	"github.com/authzed/controller-idioms/cachekeys"
 	"github.com/authzed/controller-idioms/queue"
@@ -92,7 +91,7 @@ type OwnedResourceController struct {
 	Registry *typed.Registry
 	Recorder record.EventRecorder
 	Owned    schema.GroupVersionResource
-	Queue    workqueue.RateLimitingInterface
+	Queue    workqueue.TypedRateLimitingInterface[string]
 	sync     SyncFunc
 }
 
@@ -103,9 +102,11 @@ func NewOwnedResourceController(log logr.Logger, name string, owned schema.Group
 		OperationsContext: key,
 		Registry:          registry,
 		Owned:             owned,
-		Queue:             workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), name+"_queue"),
-		Recorder:          broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: name}),
-		sync:              syncFunc,
+		Queue: workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](), workqueue.TypedRateLimitingQueueConfig[string]{
+			Name: name + "_queue",
+		}),
+		Recorder: broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: name}),
+		sync:     syncFunc,
 	}
 }
 
@@ -129,15 +130,10 @@ func (c *OwnedResourceController) startWorker(ctx context.Context) {
 }
 
 func (c *OwnedResourceController) processNext(ctx context.Context) bool {
-	k, quit := c.Queue.Get()
-	defer c.Queue.Done(k)
+	key, quit := c.Queue.Get()
+	defer c.Queue.Done(key)
 	if quit {
 		return false
-	}
-	key, ok := k.(string)
-	if !ok {
-		utilruntime.HandleError(fmt.Errorf("non-string key found in queue, %T", key))
-		return true
 	}
 
 	gvr, namespace, name, err := cachekeys.SplitGVRMetaNamespaceKey(key)
@@ -163,7 +159,7 @@ func (c *OwnedResourceController) processNext(ctx context.Context) bool {
 		c.Queue.AddAfter(key, after)
 	}
 
-	ctx = c.OperationsContext.WithValue(ctx, queue.NewOperations(done, requeue, cancel))
+	ctx = c.WithValue(ctx, queue.NewOperations(done, requeue, cancel))
 
 	c.sync(ctx, *gvr, namespace, name)
 	done()
