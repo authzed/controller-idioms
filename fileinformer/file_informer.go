@@ -170,7 +170,7 @@ func (f *FileSharedIndexInformer) AddEventHandler(handler cache.ResourceEventHan
 	})
 }
 
-func (f *FileSharedIndexInformer) AddEventHandlerWithOptions(handler cache.ResourceEventHandler, options cache.HandlerOptions) (cache.ResourceEventHandlerRegistration, error) {
+func (f *FileSharedIndexInformer) AddEventHandlerWithOptions(handler cache.ResourceEventHandler, _ cache.HandlerOptions) (cache.ResourceEventHandlerRegistration, error) {
 	f.RLock()
 	if f.started {
 		panic("cannot add event handlers after informer has started")
@@ -323,7 +323,7 @@ func (f *FileSharedIndexInformer) SetWatchErrorHandler(_ cache.WatchErrorHandler
 	panic("implement me")
 }
 
-func (f *FileSharedIndexInformer) SetWatchErrorHandlerWithContext(handler cache.WatchErrorHandlerWithContext) error {
+func (f *FileSharedIndexInformer) SetWatchErrorHandlerWithContext(_ cache.WatchErrorHandlerWithContext) error {
 	// TODO implement me
 	panic("implement me")
 }

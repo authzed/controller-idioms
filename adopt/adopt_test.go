@@ -346,7 +346,7 @@ func TestSecretAdopterHandler(t *testing.T) {
 					require.Equal(t, tt.expectCtxSecret, CtxSecret.Value(ctx))
 				}, "testnext"),
 			)
-			ctx := CtxOwnerNN.WithValue(context.Background(), tt.cluster)
+			ctx := CtxOwnerNN.WithValue(t.Context(), tt.cluster)
 			ctx = CtxSecretNN.WithValue(ctx, types.NamespacedName{Namespace: "test", Name: tt.secretName})
 			ctx = QueueOps.WithValue(ctx, ctrls)
 			s.Handle(ctx)

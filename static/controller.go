@@ -7,12 +7,11 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/cache"
-
-	"github.com/go-logr/logr"
 
 	"github.com/authzed/controller-idioms/bootstrap"
 	"github.com/authzed/controller-idioms/fileinformer"
@@ -60,7 +59,7 @@ func (c *Controller[K]) Start(ctx context.Context, _ int) {
 }
 
 func (c *Controller[K]) handleStaticResource(ctx context.Context) {
-	hash, err := bootstrap.ResourceFromFile[K](ctx, c.BasicController.Name(), c.gvr, c.client, c.path, c.lastStaticHash.Load())
+	hash, err := bootstrap.ResourceFromFile[K](ctx, c.Name(), c.gvr, c.client, c.path, c.lastStaticHash.Load())
 	if err != nil {
 		utilruntime.HandleError(err)
 		return

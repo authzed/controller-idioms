@@ -5,8 +5,9 @@ import (
 	"encoding/base64"
 	"math/rand"
 
-	"github.com/authzed/controller-idioms/handler"
 	"github.com/go-logr/logr"
+
+	"github.com/authzed/controller-idioms/handler"
 )
 
 // NewSyncID returns a random string of length `size` that can be added to log

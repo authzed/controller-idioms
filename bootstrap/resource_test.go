@@ -14,11 +14,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/testing"
-	"k8s.io/klog/v2/klogr"
+	"k8s.io/klog/v2/textlogger"
 )
 
 func ExampleResourceFromFile() {
-	ctx, cancel := context.WithCancel(logr.NewContext(context.Background(), klogr.New()))
+	ctx, cancel := context.WithCancel(logr.NewContext(context.Background(), textlogger.NewLogger(textlogger.NewConfig())))
 	defer cancel()
 
 	secretGVR := corev1.SchemeGroupVersion.WithResource("secrets")

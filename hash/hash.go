@@ -71,7 +71,7 @@ func SecureObject(obj interface{}) string {
 	// xxhash's hasher.Write never returns an error, so we can safely ignore
 	// the error here tpp
 	_, _ = xxhasher.Write(hasher.Sum(nil))
-	return rand.SafeEncodeString(fmt.Sprint(xxhasher.Sum(nil)))
+	return rand.SafeEncodeString(fmt.Sprint(string(xxhasher.Sum(nil))))
 }
 
 // SecureEqual compares hashes safely
@@ -92,7 +92,7 @@ func Object(obj interface{}) string {
 	// xxhash's hasher.Write never returns an error, and Fprintf just passes up
 	// the underlying Write call's error, so we can safely ignore the error here
 	_, _ = printer.Fprintf(hasher, "%#v", obj)
-	return rand.SafeEncodeString(fmt.Sprint(hasher.Sum(nil)))
+	return rand.SafeEncodeString(fmt.Sprint(string(hasher.Sum(nil))))
 }
 
 // Equal compares hashes safely

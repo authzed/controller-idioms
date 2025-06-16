@@ -35,7 +35,7 @@ type MyObject struct {
 }
 type MyObjectStatus struct {
 	ObservedGeneration          int64 `json:"observedGeneration,omitempty" protobuf:"varint,3,opt,name=observedGeneration"`
-	conditions.StatusConditions `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	conditions.StatusConditions `json:"conditions,omitempty"         patchMergeKey:"type"                            patchStrategy:"merge" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 func TestEnsureServiceHandler(t *testing.T) {
@@ -108,7 +108,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
 			ctrls := &fake.FakeInterface{}

@@ -28,7 +28,7 @@ type MyObject struct {
 
 type MyObjectStatus struct {
 	ObservedGeneration          int64 `json:"observedGeneration,omitempty" protobuf:"varint,3,opt,name=observedGeneration"`
-	conditions.StatusConditions `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	conditions.StatusConditions `json:"conditions,omitempty"         patchMergeKey:"type"                            patchStrategy:"merge" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 func ExampleNewPauseContextHandler() {
@@ -204,7 +204,7 @@ func TestPauseHandler(t *testing.T) {
 			queueOps := queue.NewQueueOperationsCtx()
 			ctxMyObject := typedctx.WithDefault[*MyObject](nil)
 
-			ctx := context.Background()
+			ctx := t.Context()
 			ctx = queueOps.WithValue(ctx, ctrls)
 			ctx = ctxMyObject.WithValue(ctx, tt.obj)
 			var called handler.Key

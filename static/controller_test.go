@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/testing"
-	"k8s.io/klog/v2/klogr"
+	"k8s.io/klog/v2/textlogger"
 )
 
 func ExampleController() {
@@ -30,7 +30,7 @@ func ExampleController() {
 
 	// start a static controller to create the object from the file
 	// the example is a secret, but it could be any built-in or CRD-defined type
-	controller, _ := NewStaticController[*corev1.Secret](klogr.New(), "static-secret", "./example.yaml", secretGVR, client)
+	controller, _ := NewStaticController[*corev1.Secret](textlogger.NewLogger(textlogger.NewConfig()), "static-secret", "./example.yaml", secretGVR, client)
 	go controller.Start(ctx, 1)
 
 	for {

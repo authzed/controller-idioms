@@ -149,8 +149,8 @@ func ExampleIndexerFor() {
 	// Output: []*v1.Secret example/mysecret
 }
 
-func TestRemove(_ *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+func TestRemove(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	secretGVR := corev1.SchemeGroupVersion.WithResource("secrets")
@@ -179,7 +179,7 @@ func TestRemove(_ *testing.T) {
 }
 
 func TestForKey(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	registry := NewRegistry()
 

@@ -24,12 +24,11 @@ import (
 	"context"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-
-	"github.com/go-logr/logr"
 
 	"github.com/authzed/controller-idioms/handler"
 	"github.com/authzed/controller-idioms/queue"
