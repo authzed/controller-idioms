@@ -2,6 +2,7 @@ package component
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 						"example.com/component": "the-main-service-component",
 					},
 					Annotations: map[string]string{
-						hashKey: "n55dh7ch6bh5c4h75h68bh644hcfq",
+						hashKey: "76251aaa1ff6c84f",
 					},
 				}},
 			},
@@ -93,7 +94,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 						"example.com/component": "the-main-service-component",
 					},
 					Annotations: map[string]string{
-						hashKey: "n55dh7ch6bh5c4h75h68bh644hcfq",
+						hashKey: "76251aaa1ff6c84f",
 					},
 				},
 			}, &corev1.Service{ObjectMeta: metav1.ObjectMeta{
@@ -145,8 +146,9 @@ func TestEnsureServiceHandler(t *testing.T) {
 					hash.NewObjectHash(), hashKey),
 				ctxOwner,
 				queueOps,
-				func(_ context.Context, _ *applycorev1.ServiceApplyConfiguration) (*corev1.Service, error) {
+				func(_ context.Context, sac *applycorev1.ServiceApplyConfiguration) (*corev1.Service, error) {
 					applyCalled = true
+					fmt.Print(sac.Annotations)
 					return nil, nil
 				},
 				func(_ context.Context, _ types.NamespacedName) error {

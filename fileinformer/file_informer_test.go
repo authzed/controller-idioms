@@ -46,7 +46,7 @@ func TestFileInformer(t *testing.T) {
 	require.Len(t, eventHandlers.Calls, 1)
 	eventHandlers.Unlock()
 	eventHandlers2.Lock()
-	require.Len(t, len(eventHandlers2.Calls), 1)
+	require.Len(t, eventHandlers2.Calls, 1)
 	eventHandlers2.Unlock()
 
 	// expect an OnAdd when the file is written
