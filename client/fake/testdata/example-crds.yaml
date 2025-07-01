@@ -1,0 +1,93 @@
+---
+apiVersion: "apiextensions.k8s.io/v1"
+kind: "CustomResourceDefinition"
+metadata:
+  name: "widgets.embed.example.com"
+spec:
+  group: "embed.example.com"
+  names:
+    kind: "Widget"
+    plural: "widgets"
+    singular: "widget"
+  scope: "Namespaced"
+  versions:
+    - name: "v1"
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"
+              properties:
+                size:
+                  type: "string"
+                  enum: ["small", "medium", "large"]
+                replicas:
+                  type: "integer"
+                  minimum: 1
+                  maximum: 10
+                enabled:
+                  type: "boolean"
+                  default: true
+---
+apiVersion: "apiextensions.k8s.io/v1"
+kind: "CustomResourceDefinition"
+metadata:
+  name: "tools.embed.example.com"
+spec:
+  group: "embed.example.com"
+  names:
+    kind: "Tool"
+    plural: "tools"
+    singular: "tool"
+  scope: "Namespaced"
+  versions:
+    - name: "v1alpha1"
+      served: true
+      storage: false
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"
+              properties:
+                name:
+                  type: "string"
+    - name: "v1"
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"
+              properties:
+                name:
+                  type: "string"
+                description:
+                  type: "string"
+                weight:
+                  type: "integer"
+                  description: "Weight in grams"
