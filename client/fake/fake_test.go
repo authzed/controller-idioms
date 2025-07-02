@@ -220,8 +220,8 @@ func findInList(list *unstructured.UnstructuredList, name string) *unstructured.
 	return nil
 }
 
-// TestNewFakeDynamicClientWithOpenAPISpec tests the constructor that accepts custom OpenAPI spec paths
-func TestNewFakeDynamicClientWithOpenAPISpec(t *testing.T) {
+// TestNewClientWithOpenAPISpec tests the constructor that accepts custom OpenAPI spec paths
+func TestNewClientWithOpenAPISpec(t *testing.T) {
 	scheme := setupScheme()
 	ctx := t.Context()
 
@@ -280,7 +280,7 @@ func TestNewFakeDynamicClientWithOpenAPISpec(t *testing.T) {
 
 	t.Run("WithDefaultEmbeddedSpec", func(t *testing.T) {
 		// Test with empty spec path (should use embedded default)
-		client := NewFakeDynamicClientWithOpenAPISpec(scheme, "", []*apiextensionsv1.CustomResourceDefinition{crd})
+		client := NewClient(scheme, WithCRDs(crd))
 
 		// Test that strategic merge patch works with built-in types (proving OpenAPI spec is loaded)
 		deploymentGVR := schema.GroupVersionResource{
@@ -395,7 +395,7 @@ func TestNewFakeDynamicClientWithOpenAPISpec(t *testing.T) {
 
 	t.Run("WithExplicitSpecPath", func(t *testing.T) {
 		// Test with explicit path to the swagger.json file
-		client := NewFakeDynamicClientWithOpenAPISpec(scheme, "swagger.json", []*apiextensionsv1.CustomResourceDefinition{crd})
+		client := NewClient(scheme, WithOpenAPISpec("swagger.json"), WithCRDs(crd))
 
 		// Test that it works the same as the embedded version
 		configMapGVR := schema.GroupVersionResource{
@@ -434,7 +434,7 @@ func TestNewFakeDynamicClientWithOpenAPISpec(t *testing.T) {
 	t.Run("WithNonExistentSpecPath", func(t *testing.T) {
 		// This should panic since it's used in tests and the spec file doesn't exist
 		require.Panics(t, func() {
-			NewFakeDynamicClientWithOpenAPISpec(scheme, "/non/existent/path.json", nil)
+			NewClient(scheme, WithOpenAPISpec("/non/existent/path.json"))
 		}, "Should panic when OpenAPI spec file doesn't exist")
 	})
 
@@ -477,7 +477,7 @@ func TestNewFakeDynamicClientWithOpenAPISpec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with the custom spec
-		client := NewFakeDynamicClientWithOpenAPISpec(scheme, customSpecPath, nil)
+		client := NewClient(scheme, WithOpenAPISpec(customSpecPath))
 
 		configMapGVR := schema.GroupVersionResource{
 			Group:    "",
@@ -520,7 +520,7 @@ func TestOpenAPISpecVersionCompatibility(t *testing.T) {
 		scheme := setupScheme()
 
 		// Create client with embedded spec
-		client := NewFakeDynamicClientWithOpenAPISpec(scheme, "", nil)
+		client := NewClient(scheme)
 
 		// Test with a resource that should exist in v1.33.2
 		podGVR := schema.GroupVersionResource{
@@ -1021,14 +1021,14 @@ func TestDoubleRegistrationWithCRD(t *testing.T) {
 		Kind:    "MyAppList",
 	}
 
-	// This should not cause issues even though NewFakeDynamicClientWithCRDs
+	// This should not cause issues even though NewClient
 	// will also try to register the same types
 	scheme.AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
 	scheme.AddKnownTypeWithName(listGVK, &unstructured.UnstructuredList{})
 
 	// Create the fake client with both the scheme that already has the types
 	// registered AND the CRD (which will attempt to register them again)
-	client := NewFakeDynamicClientWithCRDs(scheme, []*apiextensionsv1.CustomResourceDefinition{crd})
+	client := NewClient(scheme, WithCRDs(crd))
 
 	// Test basic operations to ensure everything works despite potential double registration
 	appGVR := schema.GroupVersionResource{
@@ -1185,7 +1185,7 @@ func TestMultiVersionCRD(t *testing.T) {
 	}
 
 	scheme := setupScheme()
-	client := NewFakeDynamicClientWithCRDs(scheme, []*apiextensionsv1.CustomResourceDefinition{crd})
+	client := NewClient(scheme, WithCRDs(crd))
 
 	// Test creating resources with different versions
 	versions := []string{"v1alpha1", "v1beta1", "v1"}
@@ -1282,7 +1282,7 @@ func TestGoEmbedExample(t *testing.T) {
 	scheme := setupScheme()
 
 	// Create fake client using embedded CRDs
-	client := NewFakeDynamicClientWithCRDBytes(scheme, embeddedCRDs)
+	client := NewClient(scheme, WithCRDBytes(embeddedCRDs))
 
 	// Test the embedded Widget CRD
 	widgetGVR := schema.GroupVersionResource{
@@ -1401,7 +1401,7 @@ func TestMultipleEmbedFiles(t *testing.T) {
 	combinedCRDs = append(combinedCRDs, []byte("\n---\n")...)
 	combinedCRDs = append(combinedCRDs, toolCRD...)
 
-	client := NewFakeDynamicClientWithCRDBytes(scheme, combinedCRDs)
+	client := NewClient(scheme, WithCRDBytes(combinedCRDs))
 
 	// Test that both CRDs are loaded and functional
 	widgetGVR := schema.GroupVersionResource{
@@ -1451,7 +1451,7 @@ func TestMultipleEmbedFiles(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestNewFakeDynamicClientWithCRDBytes(t *testing.T) {
+func TestNewClientWithCRDBytes(t *testing.T) {
 	// Test CRD data as bytes (simulating go:embed)
 	crdYAML := `---
 apiVersion: apiextensions.k8s.io/v1
@@ -1519,7 +1519,7 @@ spec:
                 type: string`
 
 	scheme := setupScheme()
-	client := NewFakeDynamicClientWithCRDBytes(scheme, []byte(crdYAML))
+	client := NewClient(scheme, WithCRDBytes([]byte(crdYAML)))
 
 	// Test Widget CRD
 	t.Run("Widget", func(t *testing.T) {
@@ -1583,7 +1583,7 @@ spec:
 	})
 }
 
-func TestNewFakeDynamicClientWithCRDBytesAndSpec(t *testing.T) {
+func TestNewClientWithCRDBytesAndSpec(t *testing.T) {
 	crdYAML := `apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -1617,7 +1617,7 @@ spec:
 
 	scheme := setupScheme()
 	// Test with embedded spec (empty string means use default embedded spec)
-	client := NewFakeDynamicClientWithCRDBytesAndSpec(scheme, []byte(crdYAML), "")
+	client := NewClient(scheme, WithCRDBytes([]byte(crdYAML)))
 
 	appGVR := schema.GroupVersionResource{
 		Group:    "example.com",
@@ -1653,7 +1653,7 @@ func TestParseCRDsFromBytesErrorHandling(t *testing.T) {
 		scheme := setupScheme()
 
 		require.Panics(t, func() {
-			NewFakeDynamicClientWithCRDBytes(scheme, []byte(invalidYAML))
+			NewClient(scheme, WithCRDBytes([]byte(invalidYAML)))
 		})
 	})
 
@@ -1669,7 +1669,7 @@ spec:
 
 		scheme := setupScheme()
 		// Should not panic, just skip non-CRD documents
-		client := NewFakeDynamicClientWithCRDBytes(scheme, []byte(nonCRDYAML))
+		client := NewClient(scheme, WithCRDBytes([]byte(nonCRDYAML)))
 		require.NotNil(t, client)
 	})
 
@@ -1707,7 +1707,7 @@ metadata:
   name: test-service`
 
 		scheme := setupScheme()
-		client := NewFakeDynamicClientWithCRDBytes(scheme, []byte(mixedYAML))
+		client := NewClient(scheme, WithCRDBytes([]byte(mixedYAML)))
 
 		// Should work with the one valid CRD
 		widgetGVR := schema.GroupVersionResource{
@@ -1802,7 +1802,7 @@ func TestDoubleRegistrationWithTypedStruct(t *testing.T) {
 	// This should NOT panic due to double registration
 	// Our fix should prevent the fake client from trying to register the same GVK
 	// again when it's already registered in the scheme
-	client := NewFakeDynamicClientWithCRDs(scheme, []*apiextensionsv1.CustomResourceDefinition{crd})
+	client := NewClient(scheme, WithCRDs(crd))
 
 	// Test that the client works correctly
 	clusterGVR := schema.GroupVersionResource{
@@ -1839,4 +1839,557 @@ func TestDoubleRegistrationWithTypedStruct(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, retrieved)
 	require.Equal(t, "test-cluster", retrieved.GetName())
+}
+
+func TestNewClientWithOptions(t *testing.T) {
+	scheme := setupScheme()
+
+	t.Run("WithNoOptions", func(t *testing.T) {
+		client := NewClient(scheme)
+		require.NotNil(t, client)
+
+		// Test basic operations work
+		configMapGVR := schema.GroupVersionResource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "configmaps",
+		}
+
+		cm := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata": map[string]interface{}{
+					"name":      "test-cm",
+					"namespace": "default",
+				},
+				"data": map[string]interface{}{
+					"key": "value",
+				},
+			},
+		}
+
+		created, err := client.Resource(configMapGVR).Namespace("default").Create(
+			t.Context(), cm, metav1.CreateOptions{},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, created)
+	})
+
+	t.Run("WithObjects", func(t *testing.T) {
+		existingCM := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata": map[string]interface{}{
+					"name":      "existing-cm",
+					"namespace": "default",
+				},
+				"data": map[string]interface{}{
+					"key": "value",
+				},
+			},
+		}
+
+		client := NewClient(scheme, WithObjects(existingCM))
+
+		configMapGVR := schema.GroupVersionResource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "configmaps",
+		}
+
+		// Should be able to get the existing object
+		retrieved, err := client.Resource(configMapGVR).Namespace("default").Get(
+			t.Context(), "existing-cm", metav1.GetOptions{},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "existing-cm", retrieved.GetName())
+	})
+
+	t.Run("WithCRDs", func(t *testing.T) {
+		crd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "widgets.test.example.com",
+			},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: "test.example.com",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Kind:     "Widget",
+					Plural:   "widgets",
+					Singular: "widget",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{
+						Name:    "v1",
+						Served:  true,
+						Storage: true,
+						Schema: &apiextensionsv1.CustomResourceValidation{
+							OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+								Type: "object",
+								Properties: map[string]apiextensionsv1.JSONSchemaProps{
+									"apiVersion": {Type: "string"},
+									"kind":       {Type: "string"},
+									"metadata":   {Type: "object"},
+									"spec": {
+										Type: "object",
+										Properties: map[string]apiextensionsv1.JSONSchemaProps{
+											"name": {Type: "string"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		client := NewClient(scheme, WithCRDs(crd))
+
+		widgetGVR := schema.GroupVersionResource{
+			Group:    "test.example.com",
+			Version:  "v1",
+			Resource: "widgets",
+		}
+
+		widget := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "test.example.com/v1",
+				"kind":       "Widget",
+				"metadata": map[string]interface{}{
+					"name":      "test-widget",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"name": "my-widget",
+				},
+			},
+		}
+
+		created, err := client.Resource(widgetGVR).Namespace("default").Create(
+			t.Context(), widget, metav1.CreateOptions{},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.Equal(t, "test-widget", created.GetName())
+	})
+
+	t.Run("WithCRDBytes", func(t *testing.T) {
+		crdYAML := `---
+apiVersion: "apiextensions.k8s.io/v1"
+kind: "CustomResourceDefinition"
+metadata:
+  name: "gadgets.test.example.com"
+spec:
+  group: "test.example.com"
+  names:
+    kind: "Gadget"
+    plural: "gadgets"
+    singular: "gadget"
+  scope: "Namespaced"
+  versions:
+    - name: "v1"
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"
+              properties:
+                name:
+                  type: "string"`
+
+		client := NewClient(scheme, WithCRDBytes([]byte(crdYAML)))
+
+		gadgetGVR := schema.GroupVersionResource{
+			Group:    "test.example.com",
+			Version:  "v1",
+			Resource: "gadgets",
+		}
+
+		gadget := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "test.example.com/v1",
+				"kind":       "Gadget",
+				"metadata": map[string]interface{}{
+					"name":      "test-gadget",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"name": "my-gadget",
+				},
+			},
+		}
+
+		created, err := client.Resource(gadgetGVR).Namespace("default").Create(
+			t.Context(), gadget, metav1.CreateOptions{},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.Equal(t, "test-gadget", created.GetName())
+	})
+
+	t.Run("WithCustomGVRMappings", func(t *testing.T) {
+		customMappings := map[schema.GroupVersionResource]string{
+			{Group: "custom.example.com", Version: "v1", Resource: "myresources"}: "MyResourceList",
+		}
+
+		client := NewClient(scheme, WithCustomGVRMappings(customMappings))
+		require.NotNil(t, client)
+
+		// The custom mapping should be available (though we can't easily test it without actually using it)
+		// This test mainly ensures the option works without panicking
+	})
+
+	t.Run("WithMultipleOptions", func(t *testing.T) {
+		existingCM := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata": map[string]interface{}{
+					"name":      "multi-cm",
+					"namespace": "default",
+				},
+			},
+		}
+
+		crdYAML := `---
+apiVersion: "apiextensions.k8s.io/v1"
+kind: "CustomResourceDefinition"
+metadata:
+  name: "tools.multi.example.com"
+spec:
+  group: "multi.example.com"
+  names:
+    kind: "Tool"
+    plural: "tools"
+    singular: "tool"
+  scope: "Namespaced"
+  versions:
+    - name: "v1"
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"`
+
+		customMappings := map[schema.GroupVersionResource]string{
+			{Group: "multi.example.com", Version: "v1", Resource: "tools"}: "ToolList",
+		}
+
+		client := NewClient(scheme,
+			WithObjects(existingCM),
+			WithCRDBytes([]byte(crdYAML)),
+			WithCustomGVRMappings(customMappings),
+		)
+
+		// Test the existing object
+		configMapGVR := schema.GroupVersionResource{
+			Group:    "",
+			Version:  "v1",
+			Resource: "configmaps",
+		}
+
+		retrieved, err := client.Resource(configMapGVR).Namespace("default").Get(
+			t.Context(), "multi-cm", metav1.GetOptions{},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "multi-cm", retrieved.GetName())
+
+		// Test the CRD from bytes
+		toolGVR := schema.GroupVersionResource{
+			Group:    "multi.example.com",
+			Version:  "v1",
+			Resource: "tools",
+		}
+
+		tool := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "multi.example.com/v1",
+				"kind":       "Tool",
+				"metadata": map[string]interface{}{
+					"name":      "multi-tool",
+					"namespace": "default",
+				},
+			},
+		}
+
+		created, err := client.Resource(toolGVR).Namespace("default").Create(
+			t.Context(), tool, metav1.CreateOptions{},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "multi-tool", created.GetName())
+	})
+
+	t.Run("WithMultipleCRDBytes", func(t *testing.T) {
+		widgetCRDYAML := `---
+apiVersion: "apiextensions.k8s.io/v1"
+kind: "CustomResourceDefinition"
+metadata:
+  name: "widgets.multi.example.com"
+spec:
+  group: "multi.example.com"
+  names:
+    kind: "Widget"
+    plural: "widgets"
+    singular: "widget"
+  scope: "Namespaced"
+  versions:
+    - name: "v1"
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"
+              properties:
+                name:
+                  type: "string"`
+
+		gadgetCRDYAML := `---
+apiVersion: "apiextensions.k8s.io/v1"
+kind: "CustomResourceDefinition"
+metadata:
+  name: "gadgets.multi.example.com"
+spec:
+  group: "multi.example.com"
+  names:
+    kind: "Gadget"
+    plural: "gadgets"
+    singular: "gadget"
+  scope: "Namespaced"
+  versions:
+    - name: "v1"
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"
+              properties:
+                name:
+                  type: "string"`
+
+		// Create client with multiple CRD byte slices
+		client := NewClient(scheme, WithCRDBytes([]byte(widgetCRDYAML), []byte(gadgetCRDYAML)))
+
+		// Test Widget CRD
+		widgetGVR := schema.GroupVersionResource{
+			Group:    "multi.example.com",
+			Version:  "v1",
+			Resource: "widgets",
+		}
+
+		widget := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "multi.example.com/v1",
+				"kind":       "Widget",
+				"metadata": map[string]interface{}{
+					"name":      "multi-widget",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"name": "my-widget",
+				},
+			},
+		}
+
+		created, err := client.Resource(widgetGVR).Namespace("default").Create(
+			t.Context(), widget, metav1.CreateOptions{},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.Equal(t, "multi-widget", created.GetName())
+
+		// Test Gadget CRD
+		gadgetGVR := schema.GroupVersionResource{
+			Group:    "multi.example.com",
+			Version:  "v1",
+			Resource: "gadgets",
+		}
+
+		gadget := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "multi.example.com/v1",
+				"kind":       "Gadget",
+				"metadata": map[string]interface{}{
+					"name":      "multi-gadget",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"name": "my-gadget",
+				},
+			},
+		}
+
+		created, err = client.Resource(gadgetGVR).Namespace("default").Create(
+			t.Context(), gadget, metav1.CreateOptions{},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.Equal(t, "multi-gadget", created.GetName())
+	})
+
+	t.Run("WithMultipleCRDBytesCallsChained", func(t *testing.T) {
+		widgetCRDYAML := `---
+apiVersion: "apiextensions.k8s.io/v1"
+kind: "CustomResourceDefinition"
+metadata:
+  name: "widgets.chained.example.com"
+spec:
+  group: "chained.example.com"
+  names:
+    kind: "Widget"
+    plural: "widgets"
+    singular: "widget"
+  scope: "Namespaced"
+  versions:
+    - name: "v1"
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"
+              properties:
+                name:
+                  type: "string"`
+
+		gadgetCRDYAML := `---
+apiVersion: "apiextensions.k8s.io/v1"
+kind: "CustomResourceDefinition"
+metadata:
+  name: "gadgets.chained.example.com"
+spec:
+  group: "chained.example.com"
+  names:
+    kind: "Gadget"
+    plural: "gadgets"
+    singular: "gadget"
+  scope: "Namespaced"
+  versions:
+    - name: "v1"
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: "object"
+          properties:
+            apiVersion:
+              type: "string"
+            kind:
+              type: "string"
+            metadata:
+              type: "object"
+            spec:
+              type: "object"
+              properties:
+                name:
+                  type: "string"`
+
+		// Create client with chained WithCRDBytes calls
+		client := NewClient(scheme,
+			WithCRDBytes([]byte(widgetCRDYAML)),
+			WithCRDBytes([]byte(gadgetCRDYAML)),
+		)
+
+		// Test Widget CRD
+		widgetGVR := schema.GroupVersionResource{
+			Group:    "chained.example.com",
+			Version:  "v1",
+			Resource: "widgets",
+		}
+
+		widget := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "chained.example.com/v1",
+				"kind":       "Widget",
+				"metadata": map[string]interface{}{
+					"name":      "chained-widget",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"name": "my-chained-widget",
+				},
+			},
+		}
+
+		created, err := client.Resource(widgetGVR).Namespace("default").Create(
+			t.Context(), widget, metav1.CreateOptions{},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.Equal(t, "chained-widget", created.GetName())
+
+		// Test Gadget CRD
+		gadgetGVR := schema.GroupVersionResource{
+			Group:    "chained.example.com",
+			Version:  "v1",
+			Resource: "gadgets",
+		}
+
+		gadget := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "chained.example.com/v1",
+				"kind":       "Gadget",
+				"metadata": map[string]interface{}{
+					"name":      "chained-gadget",
+					"namespace": "default",
+				},
+				"spec": map[string]interface{}{
+					"name": "my-chained-gadget",
+				},
+			},
+		}
+
+		created, err = client.Resource(gadgetGVR).Namespace("default").Create(
+			t.Context(), gadget, metav1.CreateOptions{},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		require.Equal(t, "chained-gadget", created.GetName())
+	})
 }

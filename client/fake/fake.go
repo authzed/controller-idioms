@@ -28,90 +28,120 @@ import (
 
 // defaultKubernetesOpenAPISpec contains the embedded Kubernetes OpenAPI schema (v1.33.2).
 // This is approximately 3.7MB and provides strategic merge patch support for all built-in types.
-// Users can override this by providing a custom spec path to NewFakeDynamicClientWithOpenAPISpec.
+// Users can override this by providing a custom spec path to NewClient with WithOpenAPISpec.
 //
 //go:embed swagger.json
 var defaultKubernetesOpenAPISpec []byte
 
-// NewFakeDynamicClient creates a fake dynamic client with apply support.
-// The API mirrors the upstream dynamic fake client exactly.
-func NewFakeDynamicClient(scheme *runtime.Scheme, objects ...runtime.Object) dynamic.Interface {
-	gvrToListKind, err := buildGVRToListKindMapping(scheme)
-	if err != nil {
-		// panic, since this is used only in tests
-		panic("failed to build GVR to ListKind mapping: " + err.Error())
-	}
-	return newFakeClient(scheme, gvrToListKind, nil, objects...)
+// ClientOption configures a fake dynamic client
+type ClientOption func(*clientConfig)
+
+// clientConfig holds configuration for creating a fake client
+type clientConfig struct {
+	crds        []*apiextensionsv1.CustomResourceDefinition
+	crdBytes    [][]byte
+	gvrMappings map[schema.GroupVersionResource]string
+	openAPISpec string
+	objects     []runtime.Object
 }
 
-// NewFakeDynamicClientWithCustomListKinds creates a fake dynamic client with custom
-// GVR to ListKind mappings, mirroring the upstream API exactly.
-// This allows you to override or supplement the auto-detected mappings.
-func NewFakeDynamicClientWithCustomListKinds(scheme *runtime.Scheme, gvrToListKind map[schema.GroupVersionResource]string, objects ...runtime.Object) dynamic.Interface {
+// WithCRDs adds CRDs to the fake client
+func WithCRDs(crds ...*apiextensionsv1.CustomResourceDefinition) ClientOption {
+	return func(c *clientConfig) {
+		c.crds = append(c.crds, crds...)
+	}
+}
+
+// WithCRDBytes adds CRDs from byte data (YAML/JSON) to the fake client
+func WithCRDBytes(crdData ...[]byte) ClientOption {
+	return func(c *clientConfig) {
+		c.crdBytes = append(c.crdBytes, crdData...)
+	}
+}
+
+// WithCustomGVRMappings adds custom GVR to ListKind mappings
+func WithCustomGVRMappings(mappings map[schema.GroupVersionResource]string) ClientOption {
+	return func(c *clientConfig) {
+		if c.gvrMappings == nil {
+			c.gvrMappings = make(map[schema.GroupVersionResource]string)
+		}
+		for gvr, listKind := range mappings {
+			c.gvrMappings[gvr] = listKind
+		}
+	}
+}
+
+// WithOpenAPISpec sets a custom OpenAPI spec file path
+func WithOpenAPISpec(specPath string) ClientOption {
+	return func(c *clientConfig) {
+		c.openAPISpec = specPath
+	}
+}
+
+// WithObjects adds initial objects to the fake client
+func WithObjects(objects ...runtime.Object) ClientOption {
+	return func(c *clientConfig) {
+		c.objects = append(c.objects, objects...)
+	}
+}
+
+// NewClient creates a fake dynamic client with the specified options.
+// This is the main constructor that all other constructors delegate to.
+func NewClient(scheme *runtime.Scheme, opts ...ClientOption) dynamic.Interface {
+	config := &clientConfig{}
+	for _, opt := range opts {
+		opt(config)
+	}
+
+	// Parse CRD bytes if provided
+	var allCRDs []*apiextensionsv1.CustomResourceDefinition
+	for _, crdBytes := range config.crdBytes {
+		crds, err := parseCRDsFromBytes(crdBytes)
+		if err != nil {
+			// panic, since this is used only in tests
+			panic("failed to parse CRDs from byte data: " + err.Error())
+		}
+		allCRDs = append(allCRDs, crds...)
+	}
+	allCRDs = append(allCRDs, config.crds...)
+
+	// Build GVR to ListKind mappings
 	autoDetectedMappings, err := buildGVRToListKindMapping(scheme)
 	if err != nil {
 		// panic, since this is used only in tests
 		panic("failed to build GVR to ListKind mapping: " + err.Error())
 	}
 
-	// Add in custom mappings (custom ones take precedence)
+	// Merge custom mappings (custom ones take precedence)
 	finalMappings := make(map[schema.GroupVersionResource]string)
 	for gvr, listKind := range autoDetectedMappings {
 		finalMappings[gvr] = listKind
 	}
-	for gvr, listKind := range gvrToListKind {
+	for gvr, listKind := range config.gvrMappings {
 		finalMappings[gvr] = listKind
 	}
 
-	return newFakeClient(scheme, finalMappings, nil, objects...)
+	// Create client with appropriate spec
+	if config.openAPISpec != "" {
+		return newFakeClientWithSpec(scheme, finalMappings, config.openAPISpec, allCRDs, config.objects...)
+	}
+	return newFakeClient(scheme, finalMappings, allCRDs, config.objects...)
 }
 
-// NewFakeDynamicClientWithCRDs creates a fake dynamic client with support for custom resources
-// defined by the provided CRDs.
-// Making a client without passing CRDs will still support all operations on the custom types, but
-// providing the CRDs will enable merge patch support for field managers.
-func NewFakeDynamicClientWithCRDs(scheme *runtime.Scheme, crds []*apiextensionsv1.CustomResourceDefinition, objects ...runtime.Object) dynamic.Interface {
-	gvrToListKind, err := buildGVRToListKindMapping(scheme)
-	if err != nil {
-		// panic, since this is used only in tests
-		panic("failed to build GVR to ListKind mapping: " + err.Error())
-	}
-	return newFakeClient(scheme, gvrToListKind, crds, objects...)
+// NewFakeDynamicClient creates a fake dynamic client with apply support.
+// The API mirrors the upstream dynamic fake client exactly.
+func NewFakeDynamicClient(scheme *runtime.Scheme, objects ...runtime.Object) dynamic.Interface {
+	return NewClient(scheme, WithObjects(objects...))
 }
 
-// NewFakeDynamicClientWithOpenAPISpec creates a fake dynamic client with support for custom resources
-// and allows specifying a custom OpenAPI spec file. If specPath is empty, uses the embedded default
-// Kubernetes OpenAPI spec (v1.33.2). This is useful for testing against different Kubernetes versions.
-func NewFakeDynamicClientWithOpenAPISpec(scheme *runtime.Scheme, specPath string, crds []*apiextensionsv1.CustomResourceDefinition, objects ...runtime.Object) dynamic.Interface {
-	gvrToListKind, err := buildGVRToListKindMapping(scheme)
-	if err != nil {
-		// panic, since this is used only in tests
-		panic("failed to build GVR to ListKind mapping: " + err.Error())
-	}
-	return newFakeClientWithSpec(scheme, gvrToListKind, specPath, crds, objects...)
-}
-
-// NewFakeDynamicClientWithCRDBytes creates a fake dynamic client with support for custom resources
-// loaded from embedded byte data. This is useful for testing with go:embed directives.
-// The crdData can contain one or more CRDs in YAML or JSON format, separated by "---".
-func NewFakeDynamicClientWithCRDBytes(scheme *runtime.Scheme, crdData []byte, objects ...runtime.Object) dynamic.Interface {
-	crds, err := parseCRDsFromBytes(crdData)
-	if err != nil {
-		// panic, since this is used only in tests
-		panic("failed to parse CRDs from byte data: " + err.Error())
-	}
-	return NewFakeDynamicClientWithCRDs(scheme, crds, objects...)
-}
-
-// NewFakeDynamicClientWithCRDBytesAndSpec creates a fake dynamic client with support for custom resources
-// loaded from embedded byte data and allows specifying a custom OpenAPI spec file.
-func NewFakeDynamicClientWithCRDBytesAndSpec(scheme *runtime.Scheme, crdData []byte, specPath string, objects ...runtime.Object) dynamic.Interface {
-	crds, err := parseCRDsFromBytes(crdData)
-	if err != nil {
-		// panic, since this is used only in tests
-		panic("failed to parse CRDs from byte data: " + err.Error())
-	}
-	return NewFakeDynamicClientWithOpenAPISpec(scheme, specPath, crds, objects...)
+// NewFakeDynamicClientWithCustomListKinds creates a fake dynamic client with custom
+// GVR to ListKind mappings, mirroring the upstream API exactly.
+// This allows you to override or supplement the auto-detected mappings.
+func NewFakeDynamicClientWithCustomListKinds(scheme *runtime.Scheme, gvrToListKind map[schema.GroupVersionResource]string, objects ...runtime.Object) dynamic.Interface {
+	return NewClient(scheme,
+		WithCustomGVRMappings(gvrToListKind),
+		WithObjects(objects...),
+	)
 }
 
 // buildGVRToListKindMapping automatically builds GVR to ListKind mappings from the scheme.
