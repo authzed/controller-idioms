@@ -356,6 +356,28 @@ func (c *fakeDynamicResourceClient) Watch(ctx context.Context, opts metav1.ListO
 }
 
 func (c *fakeDynamicResourceClient) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, options metav1.PatchOptions, subresources ...string) (*unstructured.Unstructured, error) {
+	// Handle ApplyPatchType by redirecting to Apply method which has proper SSA conflict handling
+	if pt == types.ApplyPatchType {
+		// Convert patch data to unstructured object
+		var obj unstructured.Unstructured
+		if err := json.Unmarshal(data, &obj); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal apply patch data: %w", err)
+		}
+
+		// Convert PatchOptions to ApplyOptions
+		applyOptions := metav1.ApplyOptions{
+			FieldManager: options.FieldManager,
+			DryRun:       options.DryRun,
+		}
+		if options.Force != nil {
+			applyOptions.Force = *options.Force
+		}
+
+		// Use Apply method for proper SSA handling
+		return c.Apply(ctx, name, &obj, applyOptions, subresources...)
+	}
+
+	// For other patch types, delegate to upstream client
 	return c.client.FakeDynamicClient.Resource(c.resource).Namespace(c.namespace).Patch(ctx, name, pt, data, options, subresources...)
 }
 
