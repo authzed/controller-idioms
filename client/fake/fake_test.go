@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -1839,6 +1841,164 @@ func TestDoubleRegistrationWithTypedStruct(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, retrieved)
 	require.Equal(t, "test-cluster", retrieved.GetName())
+}
+
+func TestTypedObjectsSupport(t *testing.T) {
+	scheme := setupScheme()
+
+	// Create a typed Kubernetes object (Deployment)
+	typedDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-deployment",
+			Namespace: "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: ptr.To(int32(3)),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "test",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "test",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "test-container",
+							Image: "nginx:1.21",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Create a typed ConfigMap
+	typedConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-config",
+			Namespace: "default",
+		},
+		Data: map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		},
+	}
+
+	client := NewFakeDynamicClient(scheme, typedDeployment, typedConfigMap)
+	require.NotNil(t, client)
+
+	// Test that we can interact with the typed objects
+	deploymentGVR := schema.GroupVersionResource{
+		Group:    "apps",
+		Version:  "v1",
+		Resource: "deployments",
+	}
+
+	configMapGVR := schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "configmaps",
+	}
+
+	// Test List operation
+	deploymentList, err := client.Resource(deploymentGVR).Namespace("default").List(t.Context(), metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Len(t, deploymentList.Items, 1)
+	require.Equal(t, "test-deployment", deploymentList.Items[0].GetName())
+
+	configMapList, err := client.Resource(configMapGVR).Namespace("default").List(t.Context(), metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Len(t, configMapList.Items, 1)
+	require.Equal(t, "test-config", configMapList.Items[0].GetName())
+
+	// Test Get operation
+	deployment, err := client.Resource(deploymentGVR).Namespace("default").Get(t.Context(), "test-deployment", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "test-deployment", deployment.GetName())
+
+	// Verify the deployment has the correct spec
+	replicas, found, err := unstructured.NestedInt64(deployment.Object, "spec", "replicas")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, int64(3), replicas)
+
+	configMap, err := client.Resource(configMapGVR).Namespace("default").Get(t.Context(), "test-config", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "test-config", configMap.GetName())
+
+	// Verify the configmap has the correct data
+	data, found, err := unstructured.NestedStringMap(configMap.Object, "data")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "value1", data["key1"])
+	require.Equal(t, "value2", data["key2"])
+}
+
+func TestMixedTypedAndUnstructuredObjects(t *testing.T) {
+	scheme := setupScheme()
+
+	// Create a typed object
+	typedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "typed-pod",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "test-container",
+					Image: "nginx:1.21",
+				},
+			},
+		},
+	}
+
+	// Create an unstructured object
+	unstructuredConfigMap := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata": map[string]interface{}{
+				"name":      "unstructured-config",
+				"namespace": "default",
+			},
+			"data": map[string]interface{}{
+				"key": "value",
+			},
+		},
+	}
+
+	// This should handle both typed and unstructured objects correctly
+	client := NewFakeDynamicClient(scheme, typedPod, unstructuredConfigMap)
+	require.NotNil(t, client)
+
+	// Test that both objects are accessible
+	podGVR := schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "pods",
+	}
+
+	configMapGVR := schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "configmaps",
+	}
+
+	// Get the typed pod
+	pod, err := client.Resource(podGVR).Namespace("default").Get(t.Context(), "typed-pod", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "typed-pod", pod.GetName())
+
+	// Get the unstructured configmap
+	configMap, err := client.Resource(configMapGVR).Namespace("default").Get(t.Context(), "unstructured-config", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "unstructured-config", configMap.GetName())
 }
 
 func TestNewClientWithOptions(t *testing.T) {

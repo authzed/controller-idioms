@@ -492,8 +492,40 @@ func newFakeClientWithSpec(scheme *runtime.Scheme, gvrToListKind map[schema.Grou
 	// and custom types not in the schema
 	fieldManagedTracker := clientgotesting.NewFieldManagedObjectTracker(scheme, decoder, typeConverter)
 
-	// Create upstream dynamic client with dynamic scheme
-	upstreamClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(dynamicScheme, gvrToListKind, objects...)
+	// Convert typed objects to unstructured before passing to upstream client
+	// This ensures compatibility with the dynamic scheme that only knows about unstructured types
+	unstructuredObjects := make([]runtime.Object, len(objects))
+	for i, obj := range objects {
+		if unstructuredObj, ok := obj.(*unstructured.Unstructured); ok {
+			// Already unstructured, use as-is
+			unstructuredObjects[i] = unstructuredObj
+		} else {
+			// Convert typed object to unstructured
+			unstructuredMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+			if err != nil {
+				panic(fmt.Sprintf("failed to convert object to unstructured: %v", err))
+			}
+			unstructuredObj := &unstructured.Unstructured{Object: unstructuredMap}
+
+			// Set GVK from the original object
+			gvk := obj.GetObjectKind().GroupVersionKind()
+			if gvk.Empty() {
+				// If GVK is empty, try to get it from the original scheme
+				gvks, _, err := scheme.ObjectKinds(obj)
+				if err != nil {
+					panic(fmt.Sprintf("failed to get GVK for object: %v", err))
+				}
+				if len(gvks) > 0 {
+					gvk = gvks[0]
+				}
+			}
+			unstructuredObj.SetGroupVersionKind(gvk)
+			unstructuredObjects[i] = unstructuredObj
+		}
+	}
+
+	// Create upstream dynamic client with dynamic scheme and unstructured objects
+	upstreamClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(dynamicScheme, gvrToListKind, unstructuredObjects...)
 
 	// Add reactor to handle raw Apply Patch operations that bypass our Apply method
 	upstreamClient.PrependReactor("patch", "*", func(action clientgotesting.Action) (handled bool, ret runtime.Object, err error) {
