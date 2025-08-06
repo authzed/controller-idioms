@@ -88,8 +88,8 @@ func testController(t *testing.T, name string) Controller {
 func requireCancelFnCount(t *testing.T, m *Manager, count int) {
 	t.Helper()
 	require.Eventually(t, func() bool {
-		m.RLock()
-		defer m.RUnlock()
+		m.lock.RLock()
+		defer m.lock.RUnlock()
 		return len(m.cancelFuncs) == count
 	}, 100*time.Second, 10*time.Millisecond)
 }
