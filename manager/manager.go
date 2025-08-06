@@ -30,12 +30,12 @@ type Manager struct {
 
 	// a single errG is used for all managed controllers, including those
 	// that are added after initialization
-	errG    *errgroup.Group
-	errGCtx context.Context
+	errG    *errgroup.Group // GUARDED_BY(lock)
+	errGCtx context.Context // GUARDED_BY(lock)
 
 	// a registry of cancel functions for each individual controller
-	sync.RWMutex
-	cancelFuncs map[Controller]func()
+	lock        sync.RWMutex
+	cancelFuncs map[Controller]func() // GUARDED_BY(lock)
 
 	// for broadcasting events
 	broadcaster record.EventBroadcaster
@@ -66,19 +66,19 @@ func NewManager(debugConfig *componentconfig.DebuggingConfiguration, address str
 // health / debug endpoints for them. It stops when the context is cancelled.
 // It will only have an effect the first time it is called.
 func (m *Manager) Start(ctx context.Context, readyc chan<- struct{}, controllers ...Controller) error {
-	m.RLock()
+	m.lock.RLock()
 	if m.errG != nil {
-		m.RUnlock()
+		m.lock.RUnlock()
 		return fmt.Errorf("manager already started")
 	}
-	m.RUnlock()
+	m.lock.RUnlock()
 
 	var startErr error
 	m.once.Do(func() {
-		m.Lock()
+		m.lock.Lock()
 		m.errG, ctx = errgroup.WithContext(ctx)
 		m.errGCtx = ctx
-		m.Unlock()
+		m.lock.Unlock()
 
 		// start controllers
 		if err := m.Go(controllers...); err != nil {
@@ -109,12 +109,12 @@ func (m *Manager) Start(ctx context.Context, readyc chan<- struct{}, controllers
 			<-ctx.Done()
 			m.broadcaster.Shutdown()
 
-			m.Lock()
+			m.lock.Lock()
 			for ctrl, cancel := range m.cancelFuncs {
 				cancel()
 				delete(m.cancelFuncs, ctrl)
 			}
-			m.Unlock()
+			m.lock.Unlock()
 
 			// no context passed to shutdown; the errg will block
 			// until the server is closed
@@ -137,14 +137,14 @@ func (m *Manager) Start(ctx context.Context, readyc chan<- struct{}, controllers
 
 // Go adds controllers into the existing manager's errgroup
 func (m *Manager) Go(controllers ...Controller) error {
-	m.RLock()
+	m.lock.RLock()
 	errG := m.errG
 	if errG == nil {
-		m.RUnlock()
+		m.lock.RUnlock()
 		return fmt.Errorf("cannot add controllers to an unstarted manager")
 	}
 	ctx := m.errGCtx
-	m.RUnlock()
+	m.lock.RUnlock()
 
 	// start newly added controllers
 	for _, c := range controllers {
@@ -152,9 +152,9 @@ func (m *Manager) Go(controllers ...Controller) error {
 		m.healthzHandler.AddHealthChecker(controllerhealthz.NamedHealthChecker(c.Name(), c.HealthChecker()))
 		errG.Go(func() error {
 			ctx, cancel := context.WithCancel(ctx)
-			m.Lock()
+			m.lock.Lock()
 			m.cancelFuncs[c] = cancel
-			m.Unlock()
+			m.lock.Unlock()
 			c.Start(ctx, runtime.GOMAXPROCS(0))
 			return nil
 		})
@@ -171,16 +171,16 @@ func (m *Manager) Go(controllers ...Controller) error {
 func (m *Manager) Cancel(controllers ...Controller) {
 	names := make([]string, 0, len(controllers))
 	for _, c := range controllers {
-		m.RLock()
+		m.lock.RLock()
 		cancel, ok := m.cancelFuncs[c]
-		m.RUnlock()
+		m.lock.RUnlock()
 		if ok {
 			cancel()
 		}
 		names = append(names, c.Name())
-		m.Lock()
+		m.lock.Lock()
 		delete(m.cancelFuncs, c)
-		m.Unlock()
+		m.lock.Unlock()
 	}
 	m.healthzHandler.RemoveHealthChecker(names...)
 }
