@@ -14,11 +14,11 @@ jobs:
     name: "Unit"
     runs-on: "ubuntu-latest"
     steps:
-      - uses: "actions/checkout@v3"
+      - uses: "actions/checkout@v4"
       - uses: "authzed/actions/setup-go@main"
         with:
           go-version: "${{ env.GO_VERSION }}"
-      - uses: "magefile/mage-action@v2"
+      - uses: "magefile/mage-action@v3"
         with:
           version: "latest"
           args: "test:unit"
@@ -26,11 +26,11 @@ jobs:
     name: "integration"
     runs-on: "ubuntu-latest"
     steps:
-      - uses: "actions/checkout@v3"
+      - uses: "actions/checkout@v4"
       - uses: "authzed/actions/setup-go@main"
         with:
           go-version: "${{ env.GO_VERSION }}"
-      - uses: "magefile/mage-action@v2"
+      - uses: "magefile/mage-action@v3"
         with:
           version: "latest"
           args: "test:integration"
