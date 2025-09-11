@@ -57,7 +57,7 @@ func (t Indexer[K]) Get(obj K) (item K, exists bool, err error) {
 	return gotTypedObj, gotExists, gotErr
 }
 
-func (t Indexer[K]) GetByKey(key string) (item interface{}, exists bool, err error) {
+func (t Indexer[K]) GetByKey(key string) (item K, exists bool, err error) {
 	var typedObj *K
 	gotItem, gotExists, gotErr := t.indexer.GetByKey(key)
 	if err != nil || !gotExists {
