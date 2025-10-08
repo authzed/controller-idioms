@@ -40,37 +40,37 @@ func (t Indexer[K]) ListKeys() []string {
 }
 
 func (t Indexer[K]) Get(obj K) (item K, exists bool, err error) {
-	var typedObj *K
+	var zero K
 	gotItem, gotExists, gotErr := t.indexer.Get(obj)
-	if err != nil || !gotExists {
-		return *typedObj, gotExists, gotErr
+	if gotErr != nil || !gotExists {
+		return zero, gotExists, gotErr
 	}
 	gotRObj, ok := gotItem.(runtime.Object)
 	if !ok {
-		return *typedObj, gotExists, fmt.Errorf("%v is not a runtime.Object", gotItem)
+		return zero, gotExists, fmt.Errorf("%v is not a runtime.Object", gotItem)
 	}
 
 	gotTypedObj, err := UnstructuredObjToTypedObj[K](gotRObj)
 	if err != nil {
-		return *typedObj, gotExists, fmt.Errorf("could not convert %s to %T", gotItem, *typedObj)
+		return zero, gotExists, fmt.Errorf("could not convert %s to %T", gotItem, zero)
 	}
 	return gotTypedObj, gotExists, gotErr
 }
 
 func (t Indexer[K]) GetByKey(key string) (item K, exists bool, err error) {
-	var typedObj *K
+	var zero K
 	gotItem, gotExists, gotErr := t.indexer.GetByKey(key)
-	if err != nil || !gotExists {
-		return *typedObj, gotExists, gotErr
+	if gotErr != nil || !gotExists {
+		return zero, gotExists, gotErr
 	}
 	gotRObj, ok := gotItem.(runtime.Object)
 	if !ok {
-		return *typedObj, gotExists, fmt.Errorf("%v is not a runtime.Object", gotItem)
+		return zero, gotExists, fmt.Errorf("%v is not a runtime.Object", gotItem)
 	}
 
 	gotTypedObj, err := UnstructuredObjToTypedObj[K](gotRObj)
 	if err != nil {
-		return *typedObj, gotExists, fmt.Errorf("could not convert %s to %T", gotItem, *typedObj)
+		return zero, gotExists, fmt.Errorf("could not convert %s to %T", gotItem, zero)
 	}
 	return gotTypedObj, gotExists, gotErr
 }
