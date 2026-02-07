@@ -34,14 +34,12 @@ func GVRMetaNamespaceKeyFunc(gvr schema.GroupVersionResource, obj interface{}) (
 func SplitGVRMetaNamespaceKey(key string) (gvr *schema.GroupVersionResource, namespace, name string, err error) {
 	before, after, ok := strings.Cut(key, "::")
 	if !ok {
-		err = fmt.Errorf("error parsing key: %s", key)
-		return
+		return nil, "", "", fmt.Errorf("error parsing key: %s", key)
 	}
 	gvr, _ = schema.ParseResourceArg(before)
 	if gvr == nil {
-		err = fmt.Errorf("error parsing gvr from key: %s", before)
-		return
+		return nil, "", "", fmt.Errorf("error parsing gvr from key: %s", before)
 	}
 	namespace, name, err = cache.SplitMetaNamespaceKey(after)
-	return
+	return gvr, namespace, name, err
 }
