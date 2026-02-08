@@ -1080,7 +1080,7 @@ func TestParallelDoesNotRecoverPanics(t *testing.T) {
 	//
 	// Verified by inspection: ParallelStep.Run spawns goroutines with no recover,
 	// and Go's runtime does not allow cross-goroutine panic recovery.
-	t.Log("Parallel panics cannot be caught by Recover (cross-goroutine limitation, verified by inspection)")
+	t.Log("Parallel panics cannot be caught by middleware.Recover (cross-goroutine limitation, verified by inspection)")
 }
 
 func TestParallelRespectsErrorHandler(t *testing.T) {
@@ -1102,174 +1102,26 @@ func TestParallelRespectsErrorHandler(t *testing.T) {
 	require.True(t, handlerCalled, "Parallel should invoke WithErrorHandler on cancellation, not bypass it")
 }
 
-func TestRecoverStopsPipelineOnPanic(t *testing.T) {
-	ctx := t.Context()
-	var afterPanicExecuted bool
-
-	pipeline := Sequence(
-		Recover(Do(func(_ context.Context) context.Context {
-			panic("intentional panic")
-		})),
-		Do(func(ctx context.Context) context.Context {
-			afterPanicExecuted = true
-			return ctx
-		}),
-	)
-
-	require.NotPanics(t, func() {
-		Run(ctx, pipeline)
-	}, "Recover should suppress the panic")
-	require.False(t, afterPanicExecuted, "pipeline should stop after recovered panic")
-}
-
-func TestRecoverContinuesNormally(t *testing.T) {
-	ctx := t.Context()
-	var executed []string
-
-	pipeline := Sequence(
-		Recover(Do(func(ctx context.Context) context.Context {
-			executed = append(executed, "step1")
-			return ctx
-		})),
-		Do(func(ctx context.Context) context.Context {
-			executed = append(executed, "step2")
-			return ctx
-		}),
-	)
-
-	Run(ctx, pipeline)
-
-	require.Equal(t, []string{"step1", "step2"}, executed)
-}
-
-func TestRecoverRoutesToErrorHandler(t *testing.T) {
-	var handlerErr error
-	ctx := WithErrorHandler(t.Context(), func(err error) Step {
-		handlerErr = err
-		return nil
-	})
-
-	pipeline := Recover(Do(func(_ context.Context) context.Context {
-		panic("intentional panic")
-	}))
-
-	require.NotPanics(t, func() {
-		Run(ctx, pipeline)
-	})
-	require.Error(t, handlerErr, "error handler should be called after recovered panic")
-}
-
-func TestRecoverPanicValueAvailableViaCause(t *testing.T) {
-	type sentinelType struct{ msg string }
-	panicValue := sentinelType{"something went wrong"}
-
-	var causeErr error
-	ctx := WithErrorHandler(t.Context(), func(err error) Step {
-		causeErr = err
-		return nil
-	})
-
-	pipeline := Recover(Do(func(_ context.Context) context.Context {
-		panic(panicValue)
-	}))
-
-	Run(ctx, pipeline)
-
-	var p *PanicError
-	require.ErrorAs(t, causeErr, &p, "error should be a *PanicError")
-	require.Equal(t, panicValue, p.Value, "PanicError.Value should be the original panic value")
-}
-
-func TestRecoverPanicErrorMessage(t *testing.T) {
+func TestPanicErrorMessage(t *testing.T) {
 	p := &PanicError{Value: "boom"}
 	require.Equal(t, "panic: boom", p.Error())
 }
 
-func TestRecoverWrappingSequence(t *testing.T) {
-	var afterPanicExecuted bool
-	var handlerErr error
-
-	ctx := WithErrorHandler(t.Context(), func(err error) Step {
-		handlerErr = err
-		return nil
-	})
-
-	pipeline := Sequence(
-		Recover(Sequence(
-			Do(func(ctx context.Context) context.Context { return ctx }),
-			Do(func(_ context.Context) context.Context { panic("mid-sequence panic") }),
-			Do(func(ctx context.Context) context.Context {
-				afterPanicExecuted = true
-				return ctx
-			}),
-		)),
-		Do(func(ctx context.Context) context.Context {
-			afterPanicExecuted = true
-			return ctx
-		}),
-	)
-
-	require.NotPanics(t, func() { Run(ctx, pipeline) })
-	require.False(t, afterPanicExecuted, "steps after panic should not execute")
-	var p *PanicError
-	require.ErrorAs(t, handlerErr, &p)
-	require.Equal(t, "mid-sequence panic", p.Value)
-}
-
-func TestParallelWithRunsAllBranches(t *testing.T) {
-	ctx := t.Context()
-	var counter int32
-
-	pipeline := ParallelWith(Recover,
-		Do(func(ctx context.Context) context.Context {
-			atomic.AddInt32(&counter, 1)
-			return ctx
-		}),
-		Do(func(ctx context.Context) context.Context {
-			atomic.AddInt32(&counter, 1)
-			return ctx
-		}),
-	)
-
-	Run(ctx, pipeline)
-	require.Equal(t, int32(2), atomic.LoadInt32(&counter))
-}
-
-func TestParallelWithRecoverRoutesPanicToErrorHandler(t *testing.T) {
-	var handlerErr error
-	ctx := WithErrorHandler(t.Context(), func(err error) Step {
-		handlerErr = err
-		return nil
-	})
-
-	pipeline := ParallelWith(Recover,
-		Do(func(ctx context.Context) context.Context { return ctx }),
-		Do(func(_ context.Context) context.Context { panic("branch panic") }),
-		Do(func(ctx context.Context) context.Context { return ctx }),
-	)
-
-	require.NotPanics(t, func() { Run(ctx, pipeline) })
-
-	var p *PanicError
-	require.ErrorAs(t, handlerErr, &p, "error handler should receive a *PanicError from the panicking branch")
-	require.Equal(t, "branch panic", p.Value)
-}
-
-func TestParallelWithCustomWrapper(t *testing.T) {
-	// Verify that the wrapper is actually applied to each branch, not just once.
+func TestMapAppliesWrapperToEach(t *testing.T) {
+	// Map applies the wrapper to each step.
 	var wrappedCount int32
 	countingWrapper := func(step NewStep) NewStep {
 		atomic.AddInt32(&wrappedCount, 1)
 		return step
 	}
 
-	ParallelWith(countingWrapper,
+	Map(countingWrapper,
 		Do(func(ctx context.Context) context.Context { return ctx }),
 		Do(func(ctx context.Context) context.Context { return ctx }),
 		Do(func(ctx context.Context) context.Context { return ctx }),
-	)(nil) // instantiate to trigger wrapping
+	)
 
-	require.Equal(t, int32(3), atomic.LoadInt32(&wrappedCount), "wrapper should be applied to each branch")
+	require.Equal(t, int32(3), atomic.LoadInt32(&wrappedCount), "wrapper should be applied to each step")
 }
 
 func TestParallelCancellation(t *testing.T) {
@@ -2136,6 +1988,131 @@ func TestIntegrationContextThreadingShowcase(t *testing.T) {
 }
 
 // ============================================================================
+// AMBIENT DISPATCH TESTS
+// ============================================================================
+
+func TestAmbientDispatchNoMiddleware(t *testing.T) {
+	// With no middleware registered, AmbientDispatch is transparent
+	var executed bool
+	pipeline := AmbientDispatch(Do(func(ctx context.Context) context.Context {
+		executed = true
+		return ctx
+	}))
+	Run(t.Context(), pipeline)
+	require.True(t, executed)
+}
+
+func TestAmbientDispatchAppliesMiddleware(t *testing.T) {
+	var log []string
+	mw := MakeMiddleware(
+		func(ctx context.Context) context.Context { log = append(log, "before"); return ctx },
+		func(ctx context.Context) context.Context { log = append(log, "after"); return ctx },
+	)
+	ctx := WithAmbientMiddleware(t.Context(), mw)
+
+	pipeline := AmbientDispatch(Do(func(ctx context.Context) context.Context {
+		log = append(log, "step")
+		return ctx
+	}))
+	Run(ctx, pipeline)
+	require.Equal(t, []string{"before", "step", "after"}, log)
+}
+
+func TestAmbientDispatchPropagatesAcrossSteps(t *testing.T) {
+	// Middleware registered before Run fires for every step in the pipeline
+	var log []string
+	mw := MakeMiddleware(
+		func(ctx context.Context) context.Context { log = append(log, "before"); return ctx },
+		func(ctx context.Context) context.Context { log = append(log, "after"); return ctx },
+	)
+	ctx := WithAmbientMiddleware(t.Context(), mw)
+
+	pipeline := AmbientDispatch(
+		Do(func(ctx context.Context) context.Context { log = append(log, "step1"); return ctx }),
+		Do(func(ctx context.Context) context.Context { log = append(log, "step2"); return ctx }),
+	)
+	Run(ctx, pipeline)
+	require.Equal(t, []string{
+		"before", "step1", "after",
+		"before", "step2", "after",
+	}, log)
+}
+
+func TestAmbientDispatchMidPipelineInjection(t *testing.T) {
+	// Middleware registered inside a step applies to subsequent steps only
+	var log []string
+	mw := MakeMiddleware(
+		func(ctx context.Context) context.Context { log = append(log, "mw-before"); return ctx },
+		func(ctx context.Context) context.Context { log = append(log, "mw-after"); return ctx },
+	)
+
+	pipeline := AmbientDispatch(
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step1")
+			return ctx
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "inject")
+			return WithAmbientMiddleware(ctx, mw)
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step3")
+			return ctx
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step4")
+			return ctx
+		}),
+	)
+	Run(t.Context(), pipeline)
+	require.Equal(t, []string{
+		"step1",
+		"inject",
+		"mw-before", "step3", "mw-after",
+		"mw-before", "step4", "mw-after",
+	}, log)
+}
+
+func TestAmbientDispatchWorksWithStructStep(t *testing.T) {
+	// AmbientDispatch works for steps that are raw StepFuncs (not NewStepFunc),
+	// simulating the struct method pattern.
+	var log []string
+	mw := MakeMiddleware(
+		func(ctx context.Context) context.Context { log = append(log, "before"); return ctx },
+		func(ctx context.Context) context.Context { log = append(log, "after"); return ctx },
+	)
+	ctx := WithAmbientMiddleware(t.Context(), mw)
+
+	// Simulate a struct-based step: raw NewStep returning a raw StepFunc
+	structStep := NewStep(func(next Step) Step {
+		return StepFunc(func(ctx context.Context) Step {
+			log = append(log, "struct-step")
+			return Continue(ctx, next)
+		})
+	})
+
+	pipeline := AmbientDispatch(structStep)
+	Run(ctx, pipeline)
+	require.Equal(t, []string{"before", "struct-step", "after"}, log)
+}
+
+func TestAmbientDispatchNamedStepNameVisibleInStepBody(t *testing.T) {
+	// Named sets the step name in ctx before the inner step executes.
+	// Middleware wrapping the outer Named step fires before the name is set,
+	// so middleware "before" hooks see "" for StepName. The name is visible
+	// within the step body and to any middleware applied to the inner step.
+	var nameInBody string
+	pipeline := AmbientDispatch(
+		Named("myStep", Do(func(ctx context.Context) context.Context {
+			nameInBody = StepName(ctx)
+			return ctx
+		})),
+	)
+	Run(t.Context(), pipeline)
+	require.Equal(t, "myStep", nameInBody)
+}
+
+// ============================================================================
 // BENCHMARKS
 // ============================================================================
 
@@ -2301,4 +2278,440 @@ func ExampleWithErrorHandler() {
 	// Output:
 	// step 1
 	// handling cancellation
+}
+
+// ============================================================================
+// MIDDLEWARE TESTS
+// ============================================================================
+
+func TestNewStepFuncIsConvenienceWrapper(t *testing.T) {
+	// NewStepFunc(fn) should be equivalent to:
+	//   func(next Step) Step { return StepFunc(func(ctx context.Context) Step { return fn(ctx, next) }) }
+	var called bool
+	step := NewStepFunc(func(ctx context.Context, next Step) Step {
+		called = true
+		return Continue(ctx, next)
+	})
+	Run(t.Context(), step)
+	require.True(t, called)
+}
+
+func TestMiddlewareIsAssignableFromFunc(t *testing.T) {
+	// Middleware should be a named type for func(NewStep) NewStep,
+	// assignable from a plain function literal.
+	var mw Middleware = func(step NewStep) NewStep {
+		return step
+	}
+	require.NotNil(t, mw)
+}
+
+func TestMiddlewareWrapsStep(t *testing.T) {
+	// A Middleware should be able to intercept execution.
+	var called bool
+	mw := Middleware(func(step NewStep) NewStep {
+		return func(next Step) Step {
+			called = true
+			return step(next)
+		}
+	})
+
+	pipeline := mw(Do(func(ctx context.Context) context.Context { return ctx }))
+	Run(t.Context(), pipeline)
+	require.True(t, called)
+}
+
+func TestMapAcceptsMiddleware(t *testing.T) {
+	// Map should accept a Middleware value directly (not just a raw func).
+	var wrappedCount int32
+	var mw Middleware = func(step NewStep) NewStep {
+		atomic.AddInt32(&wrappedCount, 1)
+		return step
+	}
+
+	Map(mw,
+		Do(func(ctx context.Context) context.Context { return ctx }),
+		Do(func(ctx context.Context) context.Context { return ctx }),
+	)
+
+	require.Equal(t, int32(2), atomic.LoadInt32(&wrappedCount))
+}
+
+func TestAmbientMiddlewareNilByDefault(t *testing.T) {
+	require.Nil(t, AmbientMiddleware(t.Context()))
+}
+
+func TestWithAmbientMiddlewareSingle(t *testing.T) {
+	var called bool
+	mw := Middleware(func(step NewStep) NewStep {
+		called = true
+		return step
+	})
+	ctx := WithAmbientMiddleware(t.Context(), mw)
+	got := AmbientMiddleware(ctx)
+	require.NotNil(t, got)
+	got(Noop) // trigger it
+	require.True(t, called)
+}
+
+func TestWithAmbientMiddlewareComposes(t *testing.T) {
+	// Middleware registered first is outermost at pipeline run time.
+	// "Outermost" means its before-logic runs first, after-logic runs last.
+	var log []string
+
+	mw1 := Middleware(func(step NewStep) NewStep {
+		return func(next Step) Step {
+			return StepFunc(func(ctx context.Context) Step {
+				log = append(log, "mw1-before")
+				result := step(next).Run(ctx)
+				log = append(log, "mw1-after")
+				return result
+			})
+		}
+	})
+	mw2 := Middleware(func(step NewStep) NewStep {
+		return func(next Step) Step {
+			return StepFunc(func(ctx context.Context) Step {
+				log = append(log, "mw2-before")
+				result := step(next).Run(ctx)
+				log = append(log, "mw2-after")
+				return result
+			})
+		}
+	})
+
+	ctx := WithAmbientMiddleware(t.Context(), mw1)
+	ctx = WithAmbientMiddleware(ctx, mw2)
+
+	// AmbientDispatch is required to apply ambient middleware to each step.
+	Run(ctx, AmbientDispatch(Do(func(ctx context.Context) context.Context {
+		log = append(log, "step")
+		return ctx
+	})))
+
+	// mw1 registered first = outermost: mw1(mw2(step)).
+	require.Equal(t, []string{"mw1-before", "mw2-before", "step", "mw2-after", "mw1-after"}, log)
+}
+
+func TestWithAmbientMiddlewareComposesDirectly(t *testing.T) {
+	var log []string
+	mw1 := Middleware(func(step NewStep) NewStep {
+		return func(next Step) Step {
+			return StepFunc(func(ctx context.Context) Step {
+				log = append(log, "mw1-before")
+				result := step(next).Run(ctx)
+				log = append(log, "mw1-after")
+				return result
+			})
+		}
+	})
+	mw2 := Middleware(func(step NewStep) NewStep {
+		return func(next Step) Step {
+			return StepFunc(func(ctx context.Context) Step {
+				log = append(log, "mw2-before")
+				result := step(next).Run(ctx)
+				log = append(log, "mw2-after")
+				return result
+			})
+		}
+	})
+
+	ctx := WithAmbientMiddleware(t.Context(), mw1)
+	ctx = WithAmbientMiddleware(ctx, mw2)
+
+	// Apply composed middleware directly to a step and run it
+	composed := AmbientMiddleware(ctx)
+	require.NotNil(t, composed)
+
+	pipeline := composed(Do(func(ctx context.Context) context.Context {
+		log = append(log, "step")
+		return ctx
+	}))
+	Run(t.Context(), pipeline)
+
+	// mw1 registered first = outermost
+	require.Equal(t, []string{"mw1-before", "mw2-before", "step", "mw2-after", "mw1-after"}, log)
+}
+
+func TestWithAmbientMiddlewareNilIsNoOp(t *testing.T) {
+	// Passing nil should be a no-op, not panic
+	mw := Middleware(func(step NewStep) NewStep { return step })
+	ctx := WithAmbientMiddleware(t.Context(), mw)
+	ctx2 := WithAmbientMiddleware(ctx, nil)
+	// nil is no-op — same middleware still present
+	require.NotNil(t, AmbientMiddleware(ctx2))
+}
+
+func TestAmbientMiddlewareMidPipelineInjection(t *testing.T) {
+	// Middleware registered inside a step during execution should
+	// affect all subsequent steps.
+	var log []string
+
+	mw := Middleware(func(step NewStep) NewStep {
+		return func(next Step) Step {
+			return StepFunc(func(ctx context.Context) Step {
+				log = append(log, "mw-before")
+				result := step(next).Run(ctx)
+				log = append(log, "mw-after")
+				return result
+			})
+		}
+	})
+
+	pipeline := AmbientDispatch(
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step1")
+			return ctx
+		}),
+		Do(func(ctx context.Context) context.Context {
+			// Inject mid-pipeline
+			log = append(log, "inject")
+			return WithAmbientMiddleware(ctx, mw)
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step3")
+			return ctx
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step4")
+			return ctx
+		}),
+	)
+
+	Run(t.Context(), pipeline)
+	// step1 and inject are before middleware registration — no wrapping.
+	// step3 and step4 get middleware applied. CPS runs continuations inline:
+	// step4's dispatch is nested inside step3's middleware scope, giving
+	// continuation-threading ordering where afters fire after all remaining steps.
+	require.Equal(t, []string{
+		"step1",
+		"inject",
+		"mw-before", "step3", "mw-before", "step4", "mw-after", "mw-after",
+	}, log)
+}
+
+func TestMakeMiddlewareFiresBeforeAndAfter(t *testing.T) {
+	var log []string
+
+	mw := MakeMiddleware(
+		func(ctx context.Context) context.Context {
+			log = append(log, "before")
+			return ctx
+		},
+		func(ctx context.Context) context.Context {
+			log = append(log, "after")
+			return ctx
+		},
+	)
+
+	pipeline := mw(Do(func(ctx context.Context) context.Context {
+		log = append(log, "step")
+		return ctx
+	}))
+
+	Run(t.Context(), pipeline)
+	require.Equal(t, []string{"before", "step", "after"}, log)
+}
+
+func TestMakeMiddlewareNilBeforeOrAfter(t *testing.T) {
+	// nil before or after should not panic
+	mw := MakeMiddleware(nil, nil)
+	pipeline := mw(Do(func(ctx context.Context) context.Context { return ctx }))
+	require.NotPanics(t, func() { Run(t.Context(), pipeline) })
+}
+
+func TestMakeMiddlewareWrapsSequenceAsUnit(t *testing.T) {
+	// mw(Sequence(a, b)) wraps the whole sequence with one before/after pair.
+	// This differs from Sequence(mw(a), mw(b)) which wraps each step individually.
+	// MakeMiddleware treats its step argument as a single unit.
+	var log []string
+	mw := MakeMiddleware(
+		func(ctx context.Context) context.Context { log = append(log, "before"); return ctx },
+		func(ctx context.Context) context.Context { log = append(log, "after"); return ctx },
+	)
+	a := Do(func(ctx context.Context) context.Context { log = append(log, "a"); return ctx })
+	b := Do(func(ctx context.Context) context.Context { log = append(log, "b"); return ctx })
+
+	Run(t.Context(), mw(Sequence(a, b)))
+	require.Equal(t, []string{"before", "a", "b", "after"}, log)
+}
+
+func TestAmbientMiddlewareFiresAroundSubsequentSteps(t *testing.T) {
+	// Middleware injected at step N fires before/after steps N+1, N+2, etc.
+	var log []string
+
+	loggingMW := MakeMiddleware(
+		func(ctx context.Context) context.Context {
+			log = append(log, "before")
+			return ctx
+		},
+		func(ctx context.Context) context.Context {
+			log = append(log, "after")
+			return ctx
+		},
+	)
+
+	pipeline := AmbientDispatch(
+		Do(func(ctx context.Context) context.Context {
+			return WithAmbientMiddleware(ctx, loggingMW)
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step2")
+			return ctx
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step3")
+			return ctx
+		}),
+	)
+
+	Run(t.Context(), pipeline)
+	require.Equal(t, []string{"before", "step2", "after", "before", "step3", "after"}, log)
+}
+
+func TestAmbientMiddlewareNotAppliedBeforeInjection(t *testing.T) {
+	// Steps before the injection point are NOT wrapped.
+	var log []string
+
+	loggingMW := MakeMiddleware(
+		func(ctx context.Context) context.Context {
+			log = append(log, "mw")
+			return ctx
+		},
+		nil,
+	)
+
+	pipeline := AmbientDispatch(
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step1")
+			return ctx
+		}),
+		Do(func(ctx context.Context) context.Context {
+			return WithAmbientMiddleware(ctx, loggingMW)
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step3")
+			return ctx
+		}),
+	)
+
+	Run(t.Context(), pipeline)
+	// mw should appear only around step3, not step1
+	require.Equal(t, []string{"step1", "mw", "step3"}, log)
+}
+
+func TestNamedStepNameAvailableInStepBody(t *testing.T) {
+	// Named sets the step name in ctx before the inner step body executes.
+	// The name is visible within the step body via StepName(ctx).
+	// Middleware wrapping the outer Named step fires before the name is set,
+	// so outer middleware "before" hooks see "". Use Named to annotate steps
+	// for structured logging within the step body, not for middleware observability.
+	var nameInBody string
+
+	pipeline := AmbientDispatch(
+		Do(func(ctx context.Context) context.Context {
+			return WithAmbientMiddleware(ctx, Middleware(func(step NewStep) NewStep {
+				return func(next Step) Step {
+					return StepFunc(func(ctx context.Context) Step {
+						return step(next).Run(ctx)
+					})
+				}
+			}))
+		}),
+		Named("myStep", Do(func(ctx context.Context) context.Context {
+			nameInBody = StepName(ctx)
+			return ctx
+		})),
+	)
+
+	Run(t.Context(), pipeline)
+	require.Equal(t, "myStep", nameInBody)
+}
+
+func TestUnnamedStepHasEmptyName(t *testing.T) {
+	// Unnamed steps have StepName == "" — no reflection-based fallback.
+	// Use Named() to provide an explicit name for observability.
+	var observedName string
+
+	namingMW := Middleware(func(step NewStep) NewStep {
+		return func(next Step) Step {
+			return StepFunc(func(ctx context.Context) Step {
+				observedName = StepName(ctx)
+				return step(next).Run(ctx)
+			})
+		}
+	})
+
+	ctx := WithAmbientMiddleware(t.Context(), namingMW)
+	Run(ctx, AmbientDispatch(Do(func(ctx context.Context) context.Context { return ctx })))
+	require.Empty(t, observedName)
+}
+
+func TestNamedPipelineWorksWithoutMiddleware(t *testing.T) {
+	// Named should be transparent — pipeline works identically with or without middleware
+	var executed bool
+	pipeline := Named("myStep", Do(func(ctx context.Context) context.Context {
+		executed = true
+		return ctx
+	}))
+	Run(t.Context(), pipeline)
+	require.True(t, executed)
+}
+
+func TestNamedSetsNameInContext(t *testing.T) {
+	var observedName string
+	step := Named("myStep", NewStepFunc(func(ctx context.Context, next Step) Step {
+		observedName = StepName(ctx)
+		return Continue(ctx, next)
+	}))
+	Run(t.Context(), step)
+	require.Equal(t, "myStep", observedName)
+}
+
+func TestNamedTransparentWithoutMiddleware(t *testing.T) {
+	var executed bool
+	pipeline := Named("myStep", Do(func(ctx context.Context) context.Context {
+		executed = true
+		return ctx
+	}))
+	Run(t.Context(), pipeline)
+	require.True(t, executed)
+}
+
+// ============================================================================
+// MIDDLEWARE AMBIENT INTEGRATION TESTS
+// ============================================================================
+
+func TestMiddlewareAmbient(t *testing.T) {
+	// Middleware registered as ambient applies to each subsequent step.
+	// Since CPS runs continuations inline, step3's dispatch is nested inside
+	// step2's middleware scope — afters fire after the entire remaining pipeline.
+	var log []string
+
+	mw := Middleware(func(step NewStep) NewStep {
+		return func(next Step) Step {
+			return StepFunc(func(ctx context.Context) Step {
+				log = append(log, "before")
+				result := step(next).Run(ctx)
+				log = append(log, "after")
+				return result
+			})
+		}
+	})
+
+	pipeline := AmbientDispatch(
+		Do(func(ctx context.Context) context.Context {
+			return WithAmbientMiddleware(ctx, mw)
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step2")
+			return ctx
+		}),
+		Do(func(ctx context.Context) context.Context {
+			log = append(log, "step3")
+			return ctx
+		}),
+	)
+
+	Run(t.Context(), pipeline)
+	require.Equal(t, []string{"before", "step2", "before", "step3", "after", "after"}, log)
 }
