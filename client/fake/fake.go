@@ -23,7 +23,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	clientgotesting "k8s.io/client-go/testing"
 	"k8s.io/kube-openapi/pkg/validation/spec"
-	"sigs.k8s.io/structured-merge-diff/v4/typed"
+	"sigs.k8s.io/structured-merge-diff/v6/typed"
 )
 
 // defaultKubernetesOpenAPISpec contains the embedded Kubernetes OpenAPI schema (v1.33.2).
