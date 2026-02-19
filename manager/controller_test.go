@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ func ExampleNewOwnedResourceController() {
 	CtxQueue := queue.NewQueueOperationsCtx()
 	registry := typed.NewRegistry()
 	broadcaster := record.NewBroadcaster()
-	eventSink := &typedcorev1.EventSinkImpl{Interface: fake.NewSimpleClientset().CoreV1().Events("")}
+	eventSink := &typedcorev1.EventSinkImpl{Interface: fake.NewClientset().CoreV1().Events("")}
 
 	// the controller processes objects on the queue, but doesn't set up any
 	// informers by default.
@@ -120,11 +121,12 @@ func TestControllerEventsBroadcast(t *testing.T) {
 	recorder.Event(&v1.ObjectReference{Namespace: "test", Name: "a"}, v1.EventTypeNormal, "test", "test")
 
 	require.Eventually(t, func() bool {
-		return len(eventSink.Events) > 0
+		return eventSink.Len() > 0
 	}, 5*time.Second, 1*time.Millisecond)
 }
 
 type fakeEventSink struct {
+	mu     sync.Mutex
 	Events map[types.UID]*v1.Event
 }
 
@@ -134,18 +136,30 @@ func newFakeEventSink() *fakeEventSink {
 	}
 }
 
+func (f *fakeEventSink) Len() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.Events)
+}
+
 func (f *fakeEventSink) Create(event *v1.Event) (*v1.Event, error) {
+	f.mu.Lock()
 	f.Events[event.UID] = event
+	f.mu.Unlock()
 	return event, nil
 }
 
 func (f *fakeEventSink) Update(event *v1.Event) (*v1.Event, error) {
+	f.mu.Lock()
 	f.Events[event.UID] = event
+	f.mu.Unlock()
 	return event, nil
 }
 
 func (f *fakeEventSink) Patch(oldEvent *v1.Event, _ []byte) (*v1.Event, error) {
+	f.mu.Lock()
 	f.Events[oldEvent.UID] = oldEvent
+	f.mu.Unlock()
 	return oldEvent, nil
 }
 

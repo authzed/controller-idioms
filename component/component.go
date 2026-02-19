@@ -58,7 +58,7 @@ func (c *Component[K]) List(ctx context.Context, indexValue fmt.Stringer) (out [
 	ownedObjects, err := c.indexer.ByIndex(c.indexName, indexValue.String())
 	if err != nil {
 		utilruntime.HandleError(err)
-		return
+		return out
 	}
 	for _, d := range ownedObjects {
 		ls := d.GetLabels()
