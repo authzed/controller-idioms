@@ -94,6 +94,7 @@ func (r *Registry) NewFilteredDynamicSharedInformerFactory(key FactoryKey, clien
 }
 
 // ListerFor returns a typed Lister from a Registry
+//
 // Deprecated: Use MustListerForKey instead
 func ListerFor[K runtime.Object](r *Registry, key RegistryKey) *Lister[K] {
 	return MustListerForKey[K](r, key)
@@ -114,6 +115,7 @@ func ListerForKey[K runtime.Object](r *Registry, key RegistryKey) (*Lister[K], e
 }
 
 // IndexerFor returns a typed Indexer from a Registry
+//
 // Deprecated: Use MustIndexerForKey instead
 func IndexerFor[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
 	return MustIndexerForKey[K](r, key)
@@ -154,6 +156,7 @@ func (r *Registry) Remove(key FactoryKey) {
 }
 
 // InformerFactoryFor returns GVR-specific InformerFactory from the Registry.
+//
 // Deprecated: use MustInformerFactoryForKey instead.
 func (r *Registry) InformerFactoryFor(key RegistryKey) informers.GenericInformer {
 	return r.MustInformerFactoryForKey(key)
@@ -182,6 +185,7 @@ func (r *Registry) InformerFactoryForKey(key RegistryKey) (informers.GenericInfo
 }
 
 // ListerFor returns the GVR-specific Lister from the Registry
+//
 // Deprecated: use MustListerForKey instead.
 func (r *Registry) ListerFor(key RegistryKey) cache.GenericLister {
 	return r.MustInformerFactoryForKey(key).Lister()
@@ -204,6 +208,7 @@ func (r *Registry) ListerForKey(key RegistryKey) (cache.GenericLister, error) {
 }
 
 // InformerFor returns the GVR-specific Informer from the Registry
+//
 // Deprecated: use MustInformerForKey instead.
 func (r *Registry) InformerFor(key RegistryKey) cache.SharedIndexInformer {
 	return r.MustInformerFactoryForKey(key).Informer()
@@ -226,6 +231,7 @@ func (r *Registry) InformerForKey(key RegistryKey) (cache.SharedIndexInformer, e
 }
 
 // IndexerFor returns the GVR-specific Indexer from the Registry
+//
 // Deprecated: use MustIndexerForKey instead.
 func (r *Registry) IndexerFor(key RegistryKey) cache.Indexer {
 	return r.MustInformerForKey(key).GetIndexer()

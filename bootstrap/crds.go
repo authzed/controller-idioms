@@ -26,6 +26,7 @@ const (
 )
 
 // CRD installs the CRDs in the filesystem into the kube cluster configured by the rest config.
+//
 // Deprecated: Use CRDs instead.
 func CRD(restConfig *rest.Config, crdFS fs.ReadDirFS, dir string) error {
 	return CRDs(context.Background(), restConfig, crdFS, dir)
