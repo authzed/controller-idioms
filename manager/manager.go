@@ -150,12 +150,16 @@ func (m *Manager) Go(controllers ...Controller) error {
 	for _, c := range controllers {
 		c := c
 		m.healthzHandler.AddHealthChecker(controllerhealthz.NamedHealthChecker(c.Name(), c.HealthChecker()))
+		// Create the cancel context and store it before launching the goroutine.
+		// This prevents a race condition where Cancel() is called between Go()
+		// returning and the goroutine storing the cancel function, which would
+		// cause the controller to run indefinitely with an uncancellable context.
+		cCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel stored in cancelFuncs map for later use
+		m.lock.Lock()
+		m.cancelFuncs[c] = cancel
+		m.lock.Unlock()
 		errG.Go(func() error {
-			ctx, cancel := context.WithCancel(ctx)
-			m.lock.Lock()
-			m.cancelFuncs[c] = cancel
-			m.lock.Unlock()
-			c.Start(ctx, runtime.GOMAXPROCS(0))
+			c.Start(cCtx, runtime.GOMAXPROCS(0))
 			return nil
 		})
 		if ctx.Err() != nil {

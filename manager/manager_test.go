@@ -85,6 +85,44 @@ func testController(t *testing.T, name string) Controller {
 	})
 }
 
+// TestGoThenImmediateCancelStopsController verifies that calling Cancel immediately
+// after Go correctly cancels the controller. There is a potential race condition
+// where if the cancel context is created inside the goroutine launched by Go,
+// a Cancel call between Go() returning and the goroutine executing will miss the
+// cancel function, leaving the controller running indefinitely.
+func TestGoThenImmediateCancelStopsController(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	m := NewManager(&config.DebuggingConfiguration{}, ":"+getFreePort(t), nil, nil)
+	ready := make(chan struct{})
+	go func() { _ = m.Start(ctx, ready) }()
+	<-ready
+
+	ctrl := &blockingController{BasicController: *NewBasicController("blocking"), done: make(chan struct{})}
+	require.NoError(t, m.Go(ctrl))
+	// Cancel immediately, before the goroutine launched by Go has had a chance to run.
+	m.Cancel(ctrl)
+
+	select {
+	case <-ctrl.done:
+		// Controller was cancelled and shut down correctly.
+	case <-time.After(5 * time.Second):
+		t.Fatal("controller did not shut down after Cancel — likely race condition in Manager.Go")
+	}
+}
+
+// blockingController is a Controller whose Start blocks until the context is cancelled.
+type blockingController struct {
+	BasicController
+	done chan struct{}
+}
+
+func (c *blockingController) Start(ctx context.Context, _ int) {
+	<-ctx.Done()
+	close(c.done)
+}
+
 func requireCancelFnCount(t *testing.T, m *Manager, count int) {
 	t.Helper()
 	require.Eventually(t, func() bool {

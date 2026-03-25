@@ -2276,7 +2276,7 @@ func TestContinueWithCancellation(t *testing.T) {
 }
 
 func ExampleWithErrorHandler() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel called inside pipeline step
 
 	// Set up error handler
 	ctx = WithErrorHandler(ctx, func(_ error) Step {
