@@ -145,6 +145,7 @@ type FileSharedIndexInformer struct {
 	watcher                         *fsnotify.Watcher
 	started                         bool
 	synced                          bool
+	syncedChan                      chan struct{}
 	handlers                        []cache.ResourceEventHandler
 }
 
@@ -159,6 +160,7 @@ func NewFileSharedIndexInformer(log logr.Logger, fileName string, watcher *fsnot
 		watcher:                         watcher,
 		handlers:                        []cache.ResourceEventHandler{},
 		defaultEventHandlerResyncPeriod: defaultEventHandlerResyncPeriod,
+		syncedChan:                      make(chan struct{}),
 	}
 }
 
@@ -188,6 +190,20 @@ func (f *FileSharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.
 	return f.AddEventHandlerWithOptions(handler, cache.HandlerOptions{
 		ResyncPeriod: &f.defaultEventHandlerResyncPeriod,
 	})
+}
+
+func (f *FileSharedIndexInformer) Done() <-chan struct{} {
+	return f.syncedChan
+}
+
+func (f *FileSharedIndexInformer) Name() string {
+	return "FileSharedIndexInformer"
+}
+
+// HasSyncedChecker returns the Informer which implements the DoneChecker interface
+// in the Done and Name methods.
+func (f *FileSharedIndexInformer) HasSyncedChecker() cache.DoneChecker {
+	return f
 }
 
 // RemoveEventHandler implements cache.SharedInformer
@@ -233,6 +249,8 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 
 		f.Lock()
 		f.synced = true
+		// close the syncedChan to notify any HasSyncedChecker watchers
+		close(f.syncedChan)
 		f.Unlock()
 
 		go func() {
