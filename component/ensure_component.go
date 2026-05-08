@@ -55,6 +55,11 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 	ownedObjs := e.List(ctx, e.nn.MustValue(ctx))
 
 	newObj := e.newObj(ctx)
+	// newObj may have signaled a requeue (e.g. RequeueAPIErr) which cancels
+	// the handler context; bail out before dereferencing the result.
+	if ctx.Err() != nil {
+		return
+	}
 	hash := e.Hash(newObj)
 	newObj = newObj.WithAnnotations(map[string]string{e.HashAnnotationKey: hash})
 
