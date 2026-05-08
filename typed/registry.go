@@ -65,6 +65,26 @@ type Registry struct {
 	factories map[any]dynamicinformer.DynamicSharedInformerFactory
 }
 
+// InformerRegistry is the interface satisfied by Registry. Accepting
+// InformerRegistry instead of *Registry allows test code to substitute
+// a DSK-aware implementation without changing controller signatures.
+type InformerRegistry interface {
+	MustNewFilteredDynamicSharedInformerFactory(key FactoryKey, client dynamic.Interface, defaultResync time.Duration, namespace string, tweakListOptions dynamicinformer.TweakListOptionsFunc) dynamicinformer.DynamicSharedInformerFactory
+	NewFilteredDynamicSharedInformerFactory(key FactoryKey, client dynamic.Interface, defaultResync time.Duration, namespace string, tweakListOptions dynamicinformer.TweakListOptionsFunc) (dynamicinformer.DynamicSharedInformerFactory, error)
+	Add(key FactoryKey, factory dynamicinformer.DynamicSharedInformerFactory) error
+	Remove(key FactoryKey)
+	MustInformerFactoryForKey(key RegistryKey) informers.GenericInformer
+	InformerFactoryForKey(key RegistryKey) (informers.GenericInformer, error)
+	MustInformerForKey(key RegistryKey) cache.SharedIndexInformer
+	InformerForKey(key RegistryKey) (cache.SharedIndexInformer, error)
+	MustListerForKey(key RegistryKey) cache.GenericLister
+	ListerForKey(key RegistryKey) (cache.GenericLister, error)
+	MustIndexerForKey(key RegistryKey) cache.Indexer
+	IndexerForKey(key RegistryKey) (cache.Indexer, error)
+}
+
+var _ InformerRegistry = (*Registry)(nil)
+
 // NewRegistry returns a new, empty Registry
 func NewRegistry() *Registry {
 	return &Registry{
@@ -96,17 +116,17 @@ func (r *Registry) NewFilteredDynamicSharedInformerFactory(key FactoryKey, clien
 // ListerFor returns a typed Lister from a Registry
 //
 // Deprecated: Use MustListerForKey instead
-func ListerFor[K runtime.Object](r *Registry, key RegistryKey) *Lister[K] {
+func ListerFor[K runtime.Object](r InformerRegistry, key RegistryKey) *Lister[K] {
 	return MustListerForKey[K](r, key)
 }
 
 // MustListerForKey returns a typed Lister from a Registry, or panics if the key is not found
-func MustListerForKey[K runtime.Object](r *Registry, key RegistryKey) *Lister[K] {
+func MustListerForKey[K runtime.Object](r InformerRegistry, key RegistryKey) *Lister[K] {
 	return NewLister[K](r.MustListerForKey(key))
 }
 
 // ListerForKey returns a typed Lister from a Registry, or an error if the key is not found
-func ListerForKey[K runtime.Object](r *Registry, key RegistryKey) (*Lister[K], error) {
+func ListerForKey[K runtime.Object](r InformerRegistry, key RegistryKey) (*Lister[K], error) {
 	lister, err := r.ListerForKey(key)
 	if err != nil {
 		return nil, err
@@ -117,17 +137,17 @@ func ListerForKey[K runtime.Object](r *Registry, key RegistryKey) (*Lister[K], e
 // IndexerFor returns a typed Indexer from a Registry
 //
 // Deprecated: Use MustIndexerForKey instead
-func IndexerFor[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
+func IndexerFor[K runtime.Object](r InformerRegistry, key RegistryKey) *Indexer[K] {
 	return MustIndexerForKey[K](r, key)
 }
 
 // MustIndexerForKey returns a typed Indexer from a Registry, or panics if the key is not found
-func MustIndexerForKey[K runtime.Object](r *Registry, key RegistryKey) *Indexer[K] {
+func MustIndexerForKey[K runtime.Object](r InformerRegistry, key RegistryKey) *Indexer[K] {
 	return NewIndexer[K](r.MustIndexerForKey(key))
 }
 
 // IndexerForKey returns a typed Indexer from a Registry, or an error if the key is not found
-func IndexerForKey[K runtime.Object](r *Registry, key RegistryKey) (*Indexer[K], error) {
+func IndexerForKey[K runtime.Object](r InformerRegistry, key RegistryKey) (*Indexer[K], error) {
 	indexer, err := r.IndexerForKey(key)
 	if err != nil {
 		return nil, err
