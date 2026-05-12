@@ -64,6 +64,135 @@ type ContextFunc func(context.Context) context.Context
 // This is the basic building block for composing step pipelines using continuation-passing style.
 type NewStep func(next Step) Step
 
+// Middleware wraps a NewStep with additional behavior such as logging, metrics,
+// or error handling. It follows the same decorator pattern as HTTP middleware:
+// it receives the next step and returns a new step that can execute before,
+// after, or around the original.
+//
+// Example:
+//
+//	var loggingMiddleware Middleware = func(step NewStep) NewStep {
+//	    return func(next Step) Step {
+//	        return StepFunc(func(ctx context.Context) Step {
+//	            log.Println("before")
+//	            result := step(next).Run(ctx)
+//	            log.Println("after")
+//	            return result
+//	        })
+//	    }
+//	}
+//
+// middleware.Recover (in state/middleware) is an example of a Middleware.
+type Middleware func(NewStep) NewStep
+
+type ambientMiddlewareKey struct{}
+
+// AmbientMiddleware returns the composed middleware from context.
+// Returns nil if no middleware has been registered.
+func AmbientMiddleware(ctx context.Context) Middleware {
+	v := ctx.Value(ambientMiddlewareKey{})
+	if v == nil {
+		return nil
+	}
+	return v.(Middleware)
+}
+
+// WithAmbientMiddleware composes mw into the ambient middleware stack and
+// returns an updated context. The first-registered middleware is outermost.
+// Passing nil is a no-op.
+func WithAmbientMiddleware(ctx context.Context, mw Middleware) context.Context {
+	if mw == nil {
+		return ctx
+	}
+	if existing := AmbientMiddleware(ctx); existing != nil {
+		outer := existing
+		inner := mw
+		mw = func(step NewStep) NewStep { return outer(inner(step)) }
+	}
+	return context.WithValue(ctx, ambientMiddlewareKey{}, mw)
+}
+
+// AmbientDispatch wraps each step so that ambient middleware registered in
+// context fires around every step as the pipeline executes. It is the opt-in
+// mechanism for ambient middleware support:
+//
+//	state.Run(ctx, state.AmbientDispatch(a, b, c))
+//
+// Each step argument is wrapped individually — middleware fires once per step,
+// not once for the whole group. Middleware registered via WithAmbientMiddleware
+// before Run applies to all steps. Middleware registered mid-pipeline (inside a
+// step) applies to all subsequent steps in the same AmbientDispatch call.
+//
+// AmbientDispatch works for any NewStep, including raw StepFunc closures and
+// struct method steps — no special constructor is required.
+func AmbientDispatch(steps ...NewStep) NewStep {
+	return func(outerNext Step) Step {
+		// Build the chain right-to-left. Each step's "next" is the already-dispatch-
+		// wrapped Step for the following step, so middleware fires exactly once per step.
+		current := outerNext
+		for _, step := range slices.Backward(steps) {
+			s := step
+			n := current
+			current = StepFunc(func(ctx context.Context) Step {
+				mw := AmbientMiddleware(ctx)
+				if mw == nil {
+					return s(n).Run(ctx)
+				}
+				return mw(s)(n).Run(ctx)
+			})
+		}
+		return current
+	}
+}
+
+// MakeMiddleware builds a Middleware from before and after ContextFunc hooks.
+// Either hook may be nil. The resulting middleware is correct by construction:
+// it is built from Sequence and Do, which already satisfy the Kleisli laws,
+// so composition and identity are preserved without manual proof.
+//
+// Use MakeMiddleware for logging, metrics, tracing, and similar concerns.
+// For middleware requiring defer semantics (e.g. panic recovery), write a
+// Middleware function directly (see middleware.Recover in state/middleware)
+// or use a custom StepFunc.
+func MakeMiddleware(before, after ContextFunc) Middleware {
+	return func(step NewStep) NewStep {
+		parts := make([]NewStep, 0, 3)
+		if before != nil {
+			parts = append(parts, Do(before))
+		}
+		parts = append(parts, step)
+		if after != nil {
+			parts = append(parts, Do(after))
+		}
+		return Sequence(parts...)
+	}
+}
+
+type stepNameKey struct{}
+
+// StepName returns the name of the currently-executing step from context.
+// Returns the name set by Named if present, otherwise "".
+func StepName(ctx context.Context) string {
+	if v := ctx.Value(stepNameKey{}); v != nil {
+		return v.(string)
+	}
+	return ""
+}
+
+// Named annotates a step with a human-readable name for observability.
+// The name is stored in context before the step executes, making it
+// available to middleware via StepName(ctx).
+//
+// Named is entirely optional — pipelines behave identically without it.
+func Named(name string, step NewStep) NewStep {
+	return func(next Step) Step {
+		return StepFunc(func(ctx context.Context) Step {
+			ctx = context.WithValue(ctx, stepNameKey{}, name)
+			return step(next).Run(ctx)
+		})
+	}
+}
+
 // Step converts a NewStep to a Step by calling it with nil as the next step.
 func (ns NewStep) Step() Step {
 	return ns(nil)
@@ -77,17 +206,6 @@ func (ns NewStep) Step() Step {
 //	        // your logic here
 //	        return Continue(ctx, next)
 //	    })
-//	}
-//
-// Instead of the more verbose:
-//
-//	func MyStep() NewStep {
-//	    return func(next Step) Step {
-//	        return StepFunc(func(ctx context.Context) Step {
-//	            // your logic here
-//	            return Continue(ctx, next)
-//	        })
-//	    }
 //	}
 func NewStepFunc(fn func(ctx context.Context, next Step) Step) NewStep {
 	return func(next Step) Step {
@@ -193,24 +311,19 @@ func Sequence(steps ...NewStep) NewStep {
 	}
 }
 
-// ParallelWith composes multiple NewStep functions to run in parallel,
-// applying wrapper to each branch before execution. This is useful for
-// applying a uniform policy to all branches, such as panic recovery:
+// Map applies wrapper to each step and returns the resulting slice.
+// This is useful for applying a uniform policy to a set of steps before
+// passing them to Parallel or other combinators:
 //
-//	ParallelWith(Recover, step1, step2, step3)
+//	Parallel(Map(Recover, step1, step2, step3)...)
 //
-// The wrapper is called once per branch at instantiation time (when the
-// returned NewStep is called), not at execution time.
-//
-// If using Recover as the wrapper and multiple branches panic concurrently,
-// the error handler may be called multiple times — once per panicking branch.
-// The context cause will reflect whichever panic cancelled the context first.
-func ParallelWith(wrapper func(NewStep) NewStep, steps ...NewStep) NewStep {
-	wrapped := make([]NewStep, len(steps))
+// The wrapper is called once per step when Map is called.
+func Map(wrapper Middleware, steps ...NewStep) []NewStep {
+	result := make([]NewStep, len(steps))
 	for i, s := range steps {
-		wrapped[i] = wrapper(s)
+		result[i] = wrapper(s)
 	}
-	return Parallel(wrapped...)
+	return result
 }
 
 // Parallel composes multiple NewStep functions to run in parallel,
@@ -246,41 +359,16 @@ func (p *ParallelStep) Run(ctx context.Context) Step {
 }
 
 // PanicError wraps a recovered panic value as an error.
-// It is set as the cause on the context passed to WithErrorHandler when Recover
-// catches a panic, so callers can distinguish panics from normal cancellations
-// and recover the original panic value via errors.As.
+// It is set as the cause on the context passed to WithErrorHandler when
+// middleware.Recover (in state/middleware) catches a panic, so callers can
+// distinguish panics from normal cancellations and recover the original panic
+// value via errors.As.
 type PanicError struct {
 	Value any
 }
 
 func (p *PanicError) Error() string {
 	return fmt.Sprintf("panic: %v", p.Value)
-}
-
-// Recover wraps a step with panic recovery. On panic, it cancels a child
-// context with a *PanicError cause and routes through Continue, so any
-// WithErrorHandler registered on the context will be called with the
-// *PanicError. The pipeline does not continue past the recovered panic.
-// In most cases, panics should propagate naturally — only use Recover when
-// you explicitly need to handle a panic from a specific step.
-//
-// Note: Recover cannot catch panics from goroutines spawned by the wrapped
-// step (e.g. a Parallel step). Go's runtime does not allow cross-goroutine
-// panic recovery; those panics will still crash the program.
-func Recover(step NewStep) NewStep {
-	return func(next Step) Step {
-		return StepFunc(func(ctx context.Context) (result Step) {
-			childCtx, cancel := context.WithCancelCause(ctx)
-			defer cancel(nil)
-			defer func() {
-				if r := recover(); r != nil {
-					cancel(&PanicError{Value: r})
-					result = Continue(childCtx, next)
-				}
-			}()
-			return step(next).Run(childCtx)
-		})
-	}
 }
 
 // Decision creates a conditional step that chooses between two paths.
