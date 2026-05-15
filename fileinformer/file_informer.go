@@ -23,6 +23,28 @@ var FileGroupVersion = schema.GroupVersion{
 	Version: "v1",
 }
 
+// defaultResyncPeriod is the resync period used when none is supplied via
+// WithResyncPeriod.
+const defaultResyncPeriod = 1 * time.Minute
+
+// FactoryOpts configures a Factory.
+type FactoryOpts struct {
+	// ResyncPeriod is the period at which handlers added to file informers
+	// created by this factory will receive a synthetic resync event.
+	ResyncPeriod time.Duration
+}
+
+// FactoryOptFunc mutates FactoryOpts.
+type FactoryOptFunc func(*FactoryOpts)
+
+// WithResyncPeriod sets the resync period for informers created by the
+// Factory. If not set, defaultResyncPeriod is used.
+func WithResyncPeriod(resync time.Duration) FactoryOptFunc {
+	return func(opts *FactoryOpts) {
+		opts.ResyncPeriod = resync
+	}
+}
+
 // Factory implements dynamicinformer.DynamicSharedInformerFactory, but for
 // starting and managing FileInformers.
 type Factory struct {
@@ -32,16 +54,30 @@ type Factory struct {
 	// startedInformers is used for tracking which informers have been started.
 	// This allows Start() to be called multiple times safely.
 	startedInformers map[schema.GroupVersionResource]bool
+	resyncPeriod     time.Duration
 }
 
 var _ dynamicinformer.DynamicSharedInformerFactory = &Factory{}
 
 // NewFileInformerFactory creates a new Factory.
-func NewFileInformerFactory(log logr.Logger) (*Factory, error) {
+func NewFileInformerFactory(log logr.Logger, opts ...FactoryOptFunc) (*Factory, error) {
+	options := FactoryOpts{
+		ResyncPeriod: defaultResyncPeriod,
+	}
+	for _, opt := range opts {
+		opt(&options)
+	}
+	// A negative resync period is nonsensical; fall back to the default.
+	// A zero value disables synthetic resync events, matching the convention
+	// used by k8s.io/client-go informers.
+	if options.ResyncPeriod < 0 {
+		options.ResyncPeriod = defaultResyncPeriod
+	}
 	return &Factory{
 		log:              log,
 		informers:        make(map[schema.GroupVersionResource]informers.GenericInformer),
 		startedInformers: make(map[schema.GroupVersionResource]bool),
+		resyncPeriod:     options.ResyncPeriod,
 	}, nil
 }
 
@@ -76,9 +112,11 @@ func (f *Factory) ForResource(gvr schema.GroupVersionResource) informers.Generic
 	if err != nil {
 		panic(err)
 	}
-	informer, err = NewFileInformer(f.log, watcher, gvr)
-	if err != nil {
-		panic(err)
+	informer = &FileInformer{
+		log:      f.log,
+		fileName: gvr.Resource,
+		watcher:  watcher,
+		informer: NewFileSharedIndexInformer(f.log, gvr.Resource, watcher, f.resyncPeriod),
 	}
 	f.informers[key] = informer
 
@@ -117,13 +155,15 @@ type FileInformer struct {
 
 var _ informers.GenericInformer = &FileInformer{}
 
-// NewFileInformer returns a new FileInformer.
+// NewFileInformer returns a new FileInformer using the default resync period.
+// To customize the resync period, construct a Factory with WithResyncPeriod
+// and use Factory.ForResource.
 func NewFileInformer(log logr.Logger, watcher *fsnotify.Watcher, gvr schema.GroupVersionResource) (*FileInformer, error) {
 	return &FileInformer{
 		log:      log,
 		fileName: gvr.Resource,
 		watcher:  watcher,
-		informer: NewFileSharedIndexInformer(log, gvr.Resource, watcher, 1*time.Minute),
+		informer: NewFileSharedIndexInformer(log, gvr.Resource, watcher, defaultResyncPeriod),
 	}, nil
 }
 
@@ -170,6 +210,11 @@ func (f *FileSharedIndexInformer) AddEventHandler(handler cache.ResourceEventHan
 	})
 }
 
+// AddEventHandlerWithOptions registers a handler with the informer. The
+// supplied cache.HandlerOptions is accepted for interface compatibility but
+// is not yet consumed: per-handler ResyncPeriod and other option fields are
+// ignored, and all handlers share the resync period configured on the
+// factory via WithResyncPeriod.
 func (f *FileSharedIndexInformer) AddEventHandlerWithOptions(handler cache.ResourceEventHandler, _ cache.HandlerOptions) (cache.ResourceEventHandlerRegistration, error) {
 	f.RLock()
 	if f.started {
@@ -243,21 +288,26 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 				utilruntime.HandleError(f.watcher.Close())
 				f.log.V(4).Info("stopped watching")
 			}()
-			ctx, cancel := context.WithTimeout(context.Background(), f.defaultEventHandlerResyncPeriod)
+			// A zero resync period disables synthetic resync events; leaving
+			// the channel nil ensures the resync case in the select below
+			// is never selected.
+			var resync <-chan time.Time
+			if f.defaultEventHandlerResyncPeriod > 0 {
+				ticker := time.NewTicker(f.defaultEventHandlerResyncPeriod)
+				defer ticker.Stop()
+				resync = ticker.C
+			}
 			for {
 				select {
-				case <-ctx.Done():
+				case <-resync:
 					f.log.V(4).Info("resyncing file", "after", f.defaultEventHandlerResyncPeriod.String())
 					f.RLock()
 					for _, h := range f.handlers {
 						h.OnUpdate(fileName, fileName)
 					}
 					f.RUnlock()
-					cancel()
-					ctx, cancel = context.WithTimeout(context.Background(), f.defaultEventHandlerResyncPeriod)
 				case event, ok := <-f.watcher.Events:
 					if !ok {
-						cancel()
 						return
 					}
 					f.log.V(8).Info("filewatcher got event", "event", event.String(), "event_name", event.Name)
@@ -291,12 +341,10 @@ func (f *FileSharedIndexInformer) Run(stopCh <-chan struct{}) {
 					}
 				case err, ok := <-f.watcher.Errors:
 					if !ok {
-						cancel()
 						return
 					}
 					utilruntime.HandleError(fmt.Errorf("error watching file: %w", err))
 				case <-stopCh:
-					cancel()
 					return
 				}
 			}

@@ -93,6 +93,50 @@ func TestFileInformer(t *testing.T) {
 	eventHandlers2.AssertExpectations(t)
 }
 
+func TestFileInformerWithResyncPeriod(t *testing.T) {
+	resync := 50 * time.Millisecond
+	informerFactory, err := NewFileInformerFactory(
+		textlogger.NewLogger(textlogger.NewConfig()),
+		WithResyncPeriod(resync),
+	)
+	require.NoError(t, err)
+
+	file, err := os.CreateTemp(t.TempDir(), "watched-file")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, file.Close())
+	})
+
+	eventHandlers := &MockEventHandlers{}
+	eventHandlers.On("OnAdd", file.Name()).Return()
+	eventHandlers.On("OnUpdate", file.Name(), file.Name()).Return()
+
+	inf := informerFactory.ForResource(FileGroupVersion.WithResource(file.Name())).Informer()
+	_, err = inf.AddEventHandler(eventHandlers)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	informerFactory.Start(ctx.Done())
+	informerFactory.WaitForCacheSync(ctx.Done())
+
+	// expect a synthetic resync OnUpdate within ~8x the resync period without
+	// any file modifications occurring (generous bound to tolerate loaded CI)
+	require.Eventually(t, func() bool {
+		eventHandlers.Lock()
+		defer eventHandlers.Unlock()
+		for _, call := range eventHandlers.Calls {
+			if call.Method == "OnUpdate" {
+				return true
+			}
+		}
+		return false
+	}, 8*resync, 10*time.Millisecond)
+
+	cancel()
+
+	eventHandlers.AssertExpectations(t)
+}
+
 type MockEventHandlers struct {
 	mock.Mock
 	sync.Mutex
