@@ -3,7 +3,7 @@ module github.com/authzed/controller-idioms
 go 1.25.0
 
 require (
-	github.com/authzed/ctxkey v0.0.0-20260210154927-ca132876f62c
+	github.com/authzed/ctxkey v0.1.0
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/fsnotify/fsnotify v1.9.0

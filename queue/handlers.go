@@ -57,7 +57,7 @@ import (
 	"github.com/authzed/controller-idioms/state"
 )
 
-// Done creates a handler that marks the current queue key as finished and terminates the pipeline.
+// Done is a handler that marks the current queue key as finished and terminates the pipeline.
 // This is equivalent to calling queue.NewQueueOperationsCtx().Done(ctx) and returning.
 //
 // Usage:
@@ -65,15 +65,13 @@ import (
 //	pipeline := state.Sequence(
 //	  validateInput,
 //	  processResource,
-//	  queue.Done(), // Stop here - processing complete
+//	  queue.Done, // Stop here - processing complete
 //	)
-func Done() state.NewStep {
-	return state.NewTerminalStepFunc(func(ctx context.Context) {
-		NewQueueOperationsCtx().Done(ctx)
-	})
-}
+var Done = state.NewTerminalStepFunc(func(ctx context.Context) {
+	NewQueueOperationsCtx().Done(ctx)
+})
 
-// Requeue creates a handler that requeues the current key immediately and terminates the pipeline.
+// Requeue is a handler that requeues the current key immediately and terminates the pipeline.
 // This is equivalent to calling queue.NewQueueOperationsCtx().Requeue(ctx) and returning.
 //
 // Usage:
@@ -81,13 +79,11 @@ func Done() state.NewStep {
 //	pipeline := state.Decision(
 //	  resourceReady,
 //	  continueProcessing,
-//	  queue.Requeue(), // Not ready - try again immediately
+//	  queue.Requeue, // Not ready - try again immediately
 //	)
-func Requeue() state.NewStep {
-	return state.NewTerminalStepFunc(func(ctx context.Context) {
-		NewQueueOperationsCtx().Requeue(ctx)
-	})
-}
+var Requeue = state.NewTerminalStepFunc(func(ctx context.Context) {
+	NewQueueOperationsCtx().Requeue(ctx)
+})
 
 // RequeueAfter creates a handler that requeues the current key after the specified duration
 // and terminates the pipeline.
@@ -159,35 +155,4 @@ func RequeueAPIErr(err error) state.NewStep {
 	return state.NewTerminalStepFunc(func(ctx context.Context) {
 		NewQueueOperationsCtx().RequeueAPIErr(ctx, err)
 	})
-}
-
-// OnError creates a handler that executes different queue operations based on whether
-// an error occurred in the context.
-//
-// Usage:
-//
-//	pipeline := state.Sequence(
-//	  riskyOperation,
-//	  queue.OnError(
-//	    queue.RequeueErr(fmt.Errorf("operation failed")), // If error
-//	    queue.Done(), // If success
-//	  ),
-//	)
-func OnError(errorHandler, successHandler state.NewStep) state.NewStep {
-	return func(next state.Step) state.Step {
-		errStep := errorHandler(next)
-		okStep := successHandler(next)
-		return state.StepFunc(func(ctx context.Context) state.Step {
-			if ctx.Err() != nil {
-				if errStep != nil {
-					return errStep.Run(ctx)
-				}
-				return nil
-			}
-			if okStep != nil {
-				return okStep.Run(ctx)
-			}
-			return nil
-		})
-	}
 }

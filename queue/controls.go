@@ -22,12 +22,19 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/authzed/controller-idioms/state"
 	"github.com/authzed/controller-idioms/typedctx"
 )
 
 //go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
 
 // OperationsContext is like Interface, but fetches the object from a context.
+//
+// Operations invoked through OperationsContext also annotate the enclosing
+// state middleware outcome (via state.RecordTermination), so outcome-aware
+// observability distinguishes "done" from "requeued" — with the error, for
+// the error-requeue variants. The annotation is a no-op when no outcome-aware
+// middleware is registered.
 type OperationsContext struct {
 	*typedctx.Key[Interface]
 }
@@ -38,23 +45,28 @@ func NewQueueOperationsCtx() OperationsContext {
 }
 
 func (h OperationsContext) Done(ctx context.Context) {
+	state.RecordTermination(ctx, "done", nil)
 	h.MustValue(ctx).Done()
 }
 
 func (h OperationsContext) RequeueAfter(ctx context.Context, duration time.Duration) {
+	state.RecordTermination(ctx, "requeued", nil)
 	h.MustValue(ctx).RequeueAfter(duration)
 }
 
 func (h OperationsContext) Requeue(ctx context.Context) {
+	state.RecordTermination(ctx, "requeued", nil)
 	h.MustValue(ctx).Requeue()
 }
 
 func (h OperationsContext) RequeueErr(ctx context.Context, err error) {
+	state.RecordTermination(ctx, "requeued", err)
 	logr.FromContextOrDiscard(ctx).V(4).WithCallDepth(3).Error(err, "requeueing after error")
 	h.MustValue(ctx).RequeueErr(err)
 }
 
 func (h OperationsContext) RequeueAPIErr(ctx context.Context, err error) {
+	state.RecordTermination(ctx, "requeued", err)
 	logr.FromContextOrDiscard(ctx).V(4).WithCallDepth(3).Error(err, "requeueing after api error")
 	h.MustValue(ctx).RequeueAPIErr(err)
 }
@@ -120,18 +132,21 @@ func (c *Operations) RequeueErr(err error) {
 }
 
 // RequeueAPIErr checks to see if `err` is a kube api error with retry data.
-// If so, it requeues after the wait period, otherwise, it requeues immediately.
+// If so, it requeues after the suggested wait period; if it is retryable
+// without one, it requeues immediately; otherwise it marks the key done.
+// Exactly one queue operation fires.
 func (c *Operations) RequeueAPIErr(err error) {
 	defer c.cancel()
 	c.err = err
 	retry, after := ShouldRetry(err)
-	if retry && after > 0 {
+	switch {
+	case retry && after > 0:
 		c.RequeueAfter(after)
-	}
-	if retry {
+	case retry:
 		c.Requeue()
+	default:
+		c.Done()
 	}
-	c.Done()
 }
 
 // Error returns the last recorded error, if any

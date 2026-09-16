@@ -116,6 +116,12 @@
 //	})
 //	Run(ctx, pipeline)
 //
+// A non-nil Step returned by the handler runs with the handler cleared from
+// context, so Continue calls inside the recovery path stop quietly instead of
+// re-entering it. The context is still cancelled while recovery runs, which
+// stops a Continue-linked sequence at its first link: build the recovery path
+// from a terminal step or a single step that does its work in the body.
+//
 // # Helper Functions
 //
 // The package provides helper functions for common patterns. These are all
@@ -135,7 +141,13 @@
 //   - Decision(predicate, ifTrue, ifFalse) - Binary branching (if/else)
 //   - Enum(selector, cases, default) - Multi-way branching on comparable types
 //   - Switch(selector, cases, default) - Multi-way branching on strings
-//   - Recover(step) - Wrap a step to suppress panics (opt-in; panics propagate by default)
+//
+// A panic in a step is a programming error and is left to crash the process
+// by default. Parallel branches run on their own goroutines, so their panics
+// bypass a recover installed outside the pipeline; a crash handler must run
+// inside the branch. Register one as ambient middleware with CrashHandler
+// (or Deferred) — Parallel applies the ambient stack inside every branch —
+// or apply a raw wrapper with Map. See Parallel.
 //
 // # Choosing a Pattern
 //
@@ -253,37 +265,41 @@
 //	    }),
 //	)
 //
-// To collect results from parallel branches, use typedctx.Box:
+// To collect results from parallel branches, allocate a ctxkey box per result
+// before the Parallel and let each branch fill its own. The box itself is not
+// synchronized: the pattern is race-free because each box has exactly one
+// writer, and Parallel's WaitGroup barrier orders the branch writes before the
+// post-parallel read.
 //
-//	import "github.com/authzed/controller-idioms/typedctx"
+//	import "github.com/authzed/ctxkey"
 //
 //	type ValidationResult struct { Valid bool }
 //	type PermissionsResult struct { Allowed bool }
 //
+//	var (
+//	    validationKey  = ctxkey.NewBoxedWithDefault(ValidationResult{})
+//	    permissionsKey = ctxkey.NewBoxedWithDefault(PermissionsResult{})
+//	)
+//
 //	pipeline := state.Sequence(
-//	    // Set up boxes before parallel execution
+//	    // Allocate boxes before parallel execution
 //	    state.Do(func(ctx context.Context) context.Context {
-//	        ctx = typedctx.WithBox[ValidationResult](ctx)
-//	        ctx = typedctx.WithBox[PermissionsResult](ctx)
-//	        return ctx
+//	        ctx = validationKey.SetBox(ctx)
+//	        return permissionsKey.SetBox(ctx)
 //	    }),
-//	    // Parallel branches write to their boxes
+//	    // Each branch fills exactly one box (Set writes through the existing box)
 //	    state.Parallel(
 //	        state.Do(func(ctx context.Context) context.Context {
-//	            result := validate(ctx)
-//	            typedctx.MustStore(ctx, ValidationResult{Valid: result})
-//	            return ctx
+//	            return validationKey.Set(ctx, ValidationResult{Valid: validate(ctx)})
 //	        }),
 //	        state.Do(func(ctx context.Context) context.Context {
-//	            allowed := checkPermissions(ctx)
-//	            typedctx.MustStore(ctx, PermissionsResult{Allowed: allowed})
-//	            return ctx
+//	            return permissionsKey.Set(ctx, PermissionsResult{Allowed: checkPermissions(ctx)})
 //	        }),
 //	    ),
 //	    // After parallel completes, read the results
 //	    state.Do(func(ctx context.Context) context.Context {
-//	        validation := typedctx.MustValue[ValidationResult](ctx)
-//	        permissions := typedctx.MustValue[PermissionsResult](ctx)
+//	        validation := validationKey.Value(ctx)
+//	        permissions := permissionsKey.Value(ctx)
 //	        fmt.Printf("Valid: %v, Allowed: %v\n", validation.Valid, permissions.Allowed)
 //	        return ctx
 //	    }),

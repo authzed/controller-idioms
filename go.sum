@@ -10,8 +10,8 @@ github.com/NYTimes/gziphandler v1.1.1 h1:ZUDjpQae29j0ryrS0u/B8HZfJBtBQHjqw2rQ2cq
 github.com/NYTimes/gziphandler v1.1.1/go.mod h1:n/CVRwUEOgIxrgPvAQhUUr9oeUtvrhMomdKFjzJNB0c=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
 github.com/antlr4-go/antlr/v4 v4.13.1/go.mod h1:GKmUxMtwp6ZgGwZSva4eWPC5mS6vUAmOABFgjdkM7Nw=
-github.com/authzed/ctxkey v0.0.0-20260210154927-ca132876f62c h1:kcjpI9wcj5yFYWJ7bEeiY6hqH2I6Es3lVz6PB7RKblQ=
-github.com/authzed/ctxkey v0.0.0-20260210154927-ca132876f62c/go.mod h1:ve6DXRv9l2HcM2lxSUmZKWXl7Iq/00xYixBuHOtST+4=
+github.com/authzed/ctxkey v0.1.0 h1:wtQnpKgjzxF//qotuiR/Toh691lbY2ZFynsQFQ57mrA=
+github.com/authzed/ctxkey v0.1.0/go.mod h1:ve6DXRv9l2HcM2lxSUmZKWXl7Iq/00xYixBuHOtST+4=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/blang/semver/v4 v4.0.0 h1:1PFHFE6yCCTv8C1TeyNNarDzntLi7wMI5i/pzqYIsAM=
