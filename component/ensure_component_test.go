@@ -3,7 +3,6 @@ package component
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -53,7 +52,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 
 		expectRequeueErr error
 		expectApply      bool
-		expectDelete     bool
+		expectDeleted    []string
 	}{
 		{
 			name:        "creates if no services",
@@ -106,7 +105,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 					"example.com/component": "the-main-service-component",
 				},
 			}}},
-			expectDelete: true,
+			expectDeleted: []string{"extra"},
 		},
 	}
 	for _, tt := range tests {
@@ -116,7 +115,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 
 			ctrls := &fake.FakeInterface{}
 			applyCalled := false
-			deleteCalled := false
+			var deleted []string
 
 			serviceGVR := corev1.SchemeGroupVersion.WithResource("services")
 
@@ -150,11 +149,11 @@ func TestEnsureServiceHandler(t *testing.T) {
 				queueOps,
 				func(_ context.Context, sac *applycorev1.ServiceApplyConfiguration) (*corev1.Service, error) {
 					applyCalled = true
-					fmt.Print(sac.Annotations)
+					t.Log(sac.Annotations)
 					return nil, nil
 				},
-				func(_ context.Context, _ types.NamespacedName) error {
-					deleteCalled = true
+				func(_ context.Context, nn types.NamespacedName) error {
+					deleted = append(deleted, nn.Name)
 					return nil
 				},
 				func(_ context.Context) *applycorev1.ServiceApplyConfiguration {
@@ -168,7 +167,7 @@ func TestEnsureServiceHandler(t *testing.T) {
 			h.Handle(ctx)
 
 			require.Equal(t, tt.expectApply, applyCalled)
-			require.Equal(t, tt.expectDelete, deleteCalled)
+			require.Equal(t, tt.expectDeleted, deleted)
 			if tt.expectRequeueErr != nil {
 				require.Equal(t, 1, ctrls.RequeueErrCallCount())
 				require.Equal(t, tt.expectRequeueErr, ctrls.RequeueErrArgsForCall(0))

@@ -69,6 +69,7 @@ func (e *EnsureComponentByHash[K, A]) Handle(ctx context.Context) {
 		annotations := o.GetAnnotations()
 		if annotations == nil {
 			extraObjs = append(extraObjs, o)
+			continue
 		}
 		if e.Equal(annotations[e.HashAnnotationKey], hash) {
 			matchingObjs = append(matchingObjs, o)
