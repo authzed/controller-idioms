@@ -19,7 +19,7 @@ func (t Test) All() error {
 // Unit Runs the unit tests
 func (Test) Unit() error {
 	fmt.Println("running unit tests")
-	return goTest("./...")
+	return goTest("./...", "-tags", "dsk")
 }
 
 // Integration Run integration tests
