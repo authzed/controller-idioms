@@ -6,10 +6,20 @@ import (
 	"crypto/sha512"
 	"crypto/subtle"
 	"fmt"
+	"time"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/davecgh/go-spew/spew"
 )
+
+// init loads time.Local's zone. The hash functions print objects with
+// DisableMethods, so spew reads the fields of a time.Time's location directly
+// and skips the sync.Once that loads time.Local on its first method call. If
+// that load runs during a hash, the hash races with it and can print the
+// zone empty.
+func init() {
+	_ = time.Local.String()
+}
 
 type (
 	ObjectHashFunc func(obj any) string
