@@ -1,5 +1,7 @@
 package hash
 
+import "maps"
+
 // Set is a set that stores objects based on their Object hash
 type Set[T any] map[string]T
 
@@ -68,15 +70,15 @@ func (s Set[T]) SetDifference(other Set[T]) Set[T] {
 	return result
 }
 
-// Union returns the set of objects common to both sets.
+// Union returns a new set that contains the objects from both sets. If the
+// two sets contain different objects with the same hash, the object from s
+// wins.
 func (s Set[T]) Union(other Set[T]) Set[T] {
-	result := NewSet[T]()
-	for h, o := range other {
-		result[h] = o
+	result := maps.Clone(other)
+	if result == nil {
+		result = NewSet[T]()
 	}
-	for h, o := range s {
-		result[h] = o
-	}
+	maps.Copy(result, s)
 	return result
 }
 

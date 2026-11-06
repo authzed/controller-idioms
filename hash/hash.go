@@ -104,7 +104,5 @@ func Object(obj interface{}) string {
 	return fmt.Sprintf("%x", hasher.Sum64())
 }
 
-// Equal compares hashes safely
-func Equal(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
-}
+// Equal compares two hashes safely. Equal is an alias for SecureEqual.
+var Equal = SecureEqual
