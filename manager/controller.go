@@ -88,14 +88,14 @@ type OwnedResourceController struct {
 	*BasicController
 	log logr.Logger
 	queue.OperationsContext
-	Registry *typed.Registry
+	Registry typed.InformerRegistry
 	Recorder record.EventRecorder
 	Owned    schema.GroupVersionResource
 	Queue    workqueue.TypedRateLimitingInterface[string]
 	sync     SyncFunc
 }
 
-func NewOwnedResourceController(log logr.Logger, name string, owned schema.GroupVersionResource, key queue.OperationsContext, registry *typed.Registry, broadcaster record.EventBroadcaster, syncFunc SyncFunc) *OwnedResourceController {
+func NewOwnedResourceController(log logr.Logger, name string, owned schema.GroupVersionResource, key queue.OperationsContext, registry typed.InformerRegistry, broadcaster record.EventBroadcaster, syncFunc SyncFunc) *OwnedResourceController {
 	return &OwnedResourceController{
 		log:               log,
 		BasicController:   NewBasicController(name),
