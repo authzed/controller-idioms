@@ -3,14 +3,19 @@ package finalizer_test
 import (
 	"context"
 	"fmt"
+	"testing"
 
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/fake"
 
+	"github.com/authzed/controller-idioms/component"
 	"github.com/authzed/controller-idioms/finalizer"
 )
 
@@ -177,4 +182,84 @@ func ExampleGetAddFunc_alreadyHasFinalizer() {
 
 	// Output: Finalizer count: 1
 	// Still has finalizer: true
+}
+
+const testFinalizer = "example.com/finalizer"
+
+var (
+	podGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
+	podNN  = types.NamespacedName{Namespace: "default", Name: "test"}
+)
+
+func podWithCPU(finalizers []any, deleting bool) *unstructured.Unstructured {
+	meta := map[string]any{"name": podNN.Name, "namespace": podNN.Namespace}
+	if finalizers != nil {
+		meta["finalizers"] = finalizers
+	}
+	if deleting {
+		meta["deletionTimestamp"] = "2026-10-29T10:41:00Z"
+	}
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"metadata":   meta,
+		"spec": map[string]any{
+			"containers": []any{map[string]any{
+				"name":      "c",
+				"resources": map[string]any{"requests": map[string]any{"cpu": "15000m"}},
+			}},
+		},
+	}}
+}
+
+func requireSpecUnchanged(t *testing.T, client dynamic.Interface, wantFinalizers []string) {
+	t.Helper()
+	got, err := client.Resource(podGVR).Namespace(podNN.Namespace).Get(context.Background(), podNN.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, wantFinalizers, got.GetFinalizers())
+	containers, found, err := unstructured.NestedSlice(got.Object, "spec", "containers")
+	require.NoError(t, err)
+	require.True(t, found)
+	cpu, _, err := unstructured.NestedString(containers[0].(map[string]any), "resources", "requests", "cpu")
+	require.NoError(t, err)
+	require.Equal(t, "15000m", cpu)
+}
+
+func TestFinalizerPreservesObject(t *testing.T) {
+	t.Parallel()
+	t.Run("typed", func(t *testing.T) {
+		t.Parallel()
+		testPreservesObject[*corev1.Pod](t)
+	})
+	t.Run("partial metadata", func(t *testing.T) {
+		t.Parallel()
+		testPreservesObject[*metav1.PartialObjectMetadata](t)
+	})
+}
+
+func testPreservesObject[K component.KubeObject](t *testing.T) {
+	t.Run("add", func(t *testing.T) {
+		t.Parallel()
+		client := fake.NewSimpleDynamicClient(runtime.NewScheme(), podWithCPU(nil, false))
+		obj, err := finalizer.GetAddFunc[K](client, podGVR, testFinalizer, "test")(context.Background(), podNN)
+		require.NoError(t, err)
+		require.Equal(t, []string{testFinalizer}, obj.GetFinalizers())
+		requireSpecUnchanged(t, client, []string{testFinalizer})
+	})
+	t.Run("remove", func(t *testing.T) {
+		t.Parallel()
+		client := fake.NewSimpleDynamicClient(runtime.NewScheme(), podWithCPU([]any{"other", testFinalizer}, true))
+		obj, err := finalizer.GetRemoveFunc[K](client, podGVR, testFinalizer, "test")(context.Background(), podNN)
+		require.NoError(t, err)
+		require.Equal(t, []string{"other"}, obj.GetFinalizers())
+		requireSpecUnchanged(t, client, []string{"other"})
+	})
+	t.Run("remove last", func(t *testing.T) {
+		t.Parallel()
+		client := fake.NewSimpleDynamicClient(runtime.NewScheme(), podWithCPU([]any{testFinalizer}, true))
+		obj, err := finalizer.GetRemoveFunc[K](client, podGVR, testFinalizer, "test")(context.Background(), podNN)
+		require.NoError(t, err)
+		require.Nil(t, obj.GetFinalizers())
+		requireSpecUnchanged(t, client, nil)
+	})
 }
