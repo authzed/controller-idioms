@@ -169,6 +169,38 @@ func ExampleSetFinalizerHandler() {
 	// Output: Processing next handler
 }
 
+func TestSetFinalizerPrefersApplyFinalizer(t *testing.T) {
+	t.Parallel()
+
+	CtxObject := typedctx.WithDefault[*metav1.PartialObjectMetadata](nil)
+	obj := &metav1.PartialObjectMetadata{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test", UID: "uid"}}
+	applied := &metav1.PartialObjectMetadata{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test", UID: "uid", Finalizers: []string{"finalizer"}}}
+
+	var received, next *metav1.PartialObjectMetadata
+	h := &SetFinalizerHandler[*metav1.PartialObjectMetadata]{
+		FinalizeableObjectCtxKey: CtxObject,
+		Finalizer:                "finalizer",
+		AddFinalizer: func(_ context.Context, _ types.NamespacedName) (*metav1.PartialObjectMetadata, error) {
+			require.Fail(t, "AddFinalizer must not be called when ApplyFinalizer is set")
+			return nil, nil
+		},
+		ApplyFinalizer: func(_ context.Context, o *metav1.PartialObjectMetadata) (*metav1.PartialObjectMetadata, error) {
+			received = o
+			return applied, nil
+		},
+		RequeueAPIErr: func(_ context.Context, err error) {
+			require.NoError(t, err)
+		},
+		Next: handler.NewHandlerFromFunc(func(ctx context.Context) {
+			next = CtxObject.MustValue(ctx)
+		}, "next"),
+	}
+	h.Handle(CtxObject.WithValue(t.Context(), obj))
+
+	require.Same(t, obj, received, "ApplyFinalizer gets the object with its uid")
+	require.Same(t, applied, next, "the next handler gets the applied object")
+}
+
 func TestSetFinalizer(t *testing.T) {
 	t.Parallel()
 

@@ -42,7 +42,7 @@ func ExampleGetAddFunc() {
 	}
 
 	// Create an add function for finalizers
-	addFunc := finalizer.GetAddFunc[*metav1.PartialObjectMetadata](
+	addFunc := finalizer.GetAddFunc[*metav1.PartialObjectMetadata]( //nolint:staticcheck // example of a deprecated function
 		dynamicClient,
 		gvr,
 		"my-controller.example.com/finalizer",
@@ -100,7 +100,7 @@ func ExampleGetRemoveFunc() {
 	}
 
 	// Create a remove function for finalizers
-	removeFunc := finalizer.GetRemoveFunc[*metav1.PartialObjectMetadata](
+	removeFunc := finalizer.GetRemoveFunc[*metav1.PartialObjectMetadata]( //nolint:staticcheck // example of a deprecated function
 		dynamicClient,
 		gvr,
 		"my-controller.example.com/finalizer",
@@ -155,7 +155,7 @@ func ExampleGetAddFunc_alreadyHasFinalizer() {
 	}
 
 	// Create an add function for finalizers
-	addFunc := finalizer.GetAddFunc[*metav1.PartialObjectMetadata](
+	addFunc := finalizer.GetAddFunc[*metav1.PartialObjectMetadata]( //nolint:staticcheck // example of a deprecated function
 		dynamicClient,
 		gvr,
 		"my-controller.example.com/finalizer",
