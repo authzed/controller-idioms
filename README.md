@@ -23,6 +23,7 @@ Available idioms include:
 - **[component]**: manage and aggregate resources that are created on behalf of another resource
 - **[fileinformer]**: an InformerFactory that watches local files typically for loading config without restarting
 - **[hash]**: hashing resources to detect modifications
+- **[metaapply]**: apply metadata changes (labels, annotations, finalizers) to existing objects without recreating them or dropping fields
 - **[metrics]**: metrics for resources that implement standard `metav1.Condition` arrays
 - **[pause]**: handler that allows users stop the controller reconciling a particular resource without stopping the controller
 - **[static]**: controller for "static" resources that should always exist on startup
@@ -32,6 +33,7 @@ Available idioms include:
 [component]: https://pkg.go.dev/github.com/authzed/controller-idioms/component
 [fileinformer]: https://pkg.go.dev/github.com/authzed/controller-idioms/fileinformer
 [hash]: https://pkg.go.dev/github.com/authzed/controller-idioms/hash
+[metaapply]: https://pkg.go.dev/github.com/authzed/controller-idioms/metaapply
 [metrics]: https://pkg.go.dev/github.com/authzed/controller-idioms/metrics
 [pause]: https://pkg.go.dev/github.com/authzed/controller-idioms/pause
 [static]: https://pkg.go.dev/github.com/authzed/controller-idioms/static

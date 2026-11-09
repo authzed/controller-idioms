@@ -1,10 +1,13 @@
 // Package finalizer provides utilities for managing Kubernetes finalizers in
 // controller applications.
 //
-// The core functions GetAddFunc and GetRemoveFunc return functions that can
-// add or remove finalizers from Kubernetes objects. These use get-modify-write
-// instead of apply/patch operations to ensure they cannot recreate objects
-// that have been marked for deletion.
+// Finalizer adds and removes a finalizer with a server-side apply that
+// includes the uid of the object, so it cannot recreate a deleted object. Use
+// it for new code.
+//
+// GetAddFunc and GetRemoveFunc are deprecated. They use get-modify-write and
+// write the complete object back, so they drop fields that the Go type does
+// not model.
 //
 // The SetFinalizerHandler provides a handler that automatically adds
 // finalizers to objects that don't already have them, excluding objects
@@ -33,6 +36,8 @@ type (
 
 // GetAddFunc returns a function that does a get-modify-write instead of an apply, so that it can't accidentally
 // re-create a deleted object (apply does an upsert).
+//
+// Deprecated: Use Finalizer.Add.
 func GetAddFunc[K component.KubeObject](client dynamic.Interface, gvr schema.GroupVersionResource, finalizer, fieldManager string) AddFunc[K] {
 	return func(ctx context.Context, nn types.NamespacedName) (K, error) {
 		// get latest object
@@ -72,6 +77,8 @@ func GetAddFunc[K component.KubeObject](client dynamic.Interface, gvr schema.Gro
 // GetRemoveFunc returns a function that does a get-modify-write instead of an apply. Unlike when adding, this
 // won't be called in cases that could potentially re-create a deleted object, but we do it this way so that the field
 // manager operation matches what created the finalizer (`Update`).
+//
+// Deprecated: Use Finalizer.Remove.
 func GetRemoveFunc[K component.KubeObject](client dynamic.Interface, gvr schema.GroupVersionResource, finalizer, fieldManager string) RemoveFunc[K] {
 	return func(ctx context.Context, nn types.NamespacedName) (K, error) {
 		// get latest object

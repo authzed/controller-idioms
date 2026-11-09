@@ -19,8 +19,13 @@ type ctxKey[K component.KubeObject] interface {
 type SetFinalizerHandler[K component.KubeObject] struct {
 	FinalizeableObjectCtxKey ctxKey[K]
 	Finalizer                string
-	AddFinalizer             AddFunc[K]
-	RequeueAPIErr            func(context.Context, error)
+	// AddFinalizer adds the finalizer if ApplyFinalizer is not set.
+	//
+	// Deprecated: Use ApplyFinalizer with Finalizer.Add.
+	AddFinalizer AddFunc[K]
+	// If ApplyFinalizer is set, the handler uses it instead of AddFinalizer.
+	ApplyFinalizer ApplyAddFunc[K]
+	RequeueAPIErr  func(context.Context, error)
 
 	Next handler.Handler
 }
@@ -28,7 +33,13 @@ type SetFinalizerHandler[K component.KubeObject] struct {
 func (s *SetFinalizerHandler[K]) Handle(ctx context.Context) {
 	obj := s.FinalizeableObjectCtxKey.MustValue(ctx)
 	if !slices.Contains(obj.GetFinalizers(), s.Finalizer) && obj.GetDeletionTimestamp() == nil {
-		db, err := s.AddFinalizer(ctx, types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()})
+		var db K
+		var err error
+		if s.ApplyFinalizer != nil {
+			db, err = s.ApplyFinalizer(ctx, obj)
+		} else {
+			db, err = s.AddFinalizer(ctx, types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()})
+		}
 		if err != nil {
 			s.RequeueAPIErr(ctx, err)
 			return
