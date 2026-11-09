@@ -93,7 +93,7 @@ func ExampleListerFor() {
 
 	dependentSecretKey := NewRegistryKey(dependentObjectKey, secretGVR)
 
-	cachedSecret, _ := MustListerForKey[*corev1.Secret](registry, dependentSecretKey).ByNamespace("example").Get("mysecret")
+	cachedSecret, _ := registry.MustTypedListerForKey[*corev1.Secret](dependentSecretKey).ByNamespace("example").Get("mysecret")
 	fmt.Printf("%T %s/%s", cachedSecret, cachedSecret.GetNamespace(), cachedSecret.GetName())
 	// Output: *v1.Secret example/mysecret
 }
@@ -144,7 +144,7 @@ func ExampleIndexerFor() {
 
 	dependentSecretKey := NewRegistryKey(dependentObjectKey, secretGVR)
 
-	matchingCachedSecrets, _ := MustIndexerForKey[*corev1.Secret](registry, dependentSecretKey).ByIndex(indexName, constantIndexValue)
+	matchingCachedSecrets, _ := registry.MustTypedIndexerForKey[*corev1.Secret](dependentSecretKey).ByIndex(indexName, constantIndexValue)
 	fmt.Printf("%T %s/%s", matchingCachedSecrets, matchingCachedSecrets[0].GetNamespace(), matchingCachedSecrets[0].GetName())
 	// Output: []*v1.Secret example/mysecret
 }
@@ -209,8 +209,8 @@ func TestForKey(t *testing.T) {
 		registry.MustInformerFactoryForKey(dependentSecretKey)
 		registry.MustListerForKey(dependentSecretKey)
 		registry.MustIndexerForKey(dependentSecretKey)
-		MustListerForKey[*corev1.Secret](registry, dependentSecretKey)
-		MustIndexerForKey[*corev1.Secret](registry, dependentSecretKey)
+		registry.MustTypedListerForKey[*corev1.Secret](dependentSecretKey)
+		registry.MustTypedIndexerForKey[*corev1.Secret](dependentSecretKey)
 	})
 
 	// bad key panics Must*ForKey
@@ -225,10 +225,10 @@ func TestForKey(t *testing.T) {
 		registry.MustIndexerForKey(badKey)
 	})
 	require.Panics(t, func() {
-		MustListerForKey[*corev1.Pod](registry, badKey)
+		registry.MustTypedListerForKey[*corev1.Pod](badKey)
 	})
 	require.Panics(t, func() {
-		MustIndexerForKey[*corev1.Pod](registry, badKey)
+		registry.MustTypedIndexerForKey[*corev1.Pod](badKey)
 	})
 
 	// bad key returns error for *ForKey
@@ -238,8 +238,8 @@ func TestForKey(t *testing.T) {
 	require.Error(t, err)
 	_, err = registry.IndexerForKey(badKey)
 	require.Error(t, err)
-	_, err = ListerForKey[*corev1.Pod](registry, badKey)
+	_, err = registry.TypedListerForKey[*corev1.Pod](badKey)
 	require.Error(t, err)
-	_, err = IndexerForKey[*corev1.Pod](registry, badKey)
+	_, err = registry.TypedIndexerForKey[*corev1.Pod](badKey)
 	require.Error(t, err)
 }
