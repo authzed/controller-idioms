@@ -42,6 +42,12 @@ linters:
       - "common-false-positives"
       - "legacy"
       - "std-error-handling"
+    rules:
+      # typedctx is deprecated in favor of github.com/authzed/ctxkey, but
+      # internal packages still use it until v2 removes it.
+      - linters:
+          - "staticcheck"
+        text: "SA1019: github.com/authzed/controller-idioms/typedctx"
 formatters:
   enable:
     - "gci"
