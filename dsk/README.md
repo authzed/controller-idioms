@@ -99,8 +99,7 @@ client, err := d.DynamicFromConfig(cfg)      // real dynamic client (transport p
 client := d.Typed(fake)                      // fake kubernetes.Interface (reactor path)
 client, err := d.TypedFromConfig(cfg)        // real typed client (transport path)
 q      := d.WrapQueue(q)                     // wrap workqueue.RateLimitingInterface
-q      := dsk.WrapTypedQueue(d, q)           // wrap workqueue.TypedRateLimitingInterface[T]
-                                             // (package-level function; Go does not yet support generic methods)
+q      := d.WrapTypedQueue(q)                // wrap workqueue.TypedRateLimitingInterface[T]
 
 buf := d.Buffer()                       // []PendingEvent — snapshot of buffered events
 d.WaitForEvents(n)                      // block until ≥n events are buffered (no prior write needed)

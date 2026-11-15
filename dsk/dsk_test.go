@@ -113,6 +113,23 @@ func TestDSK_IsSteady(t *testing.T) {
 	}
 }
 
+func TestDSK_WrapTypedQueue(t *testing.T) {
+	d := dsk.New(t)
+	q := d.WrapTypedQueue(workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()))
+	defer q.ShutDown()
+
+	q.Add("key1")
+	if d.IsSteady() {
+		t.Fatal("expected not steady: wrapped typed queue has a pending item")
+	}
+
+	item, _ := q.Get()
+	q.Done(item)
+	if !d.IsSteady() {
+		t.Fatal("expected steady after typed queue item processed")
+	}
+}
+
 func TestDSK_FlushEmptyIsNoop(t *testing.T) {
 	d := dsk.New(t)
 	// Neither nil nor an empty slice should panic, block, or return an error.

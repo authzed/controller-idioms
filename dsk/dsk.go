@@ -171,12 +171,7 @@ func (d *DSK) WrapQueue(q workqueue.RateLimitingInterface) workqueue.RateLimitin
 // Use this instead of WrapQueue when the controller uses
 // workqueue.TypedRateLimitingInterface[T] directly (e.g. TypedRateLimitingInterface[string]).
 // The returned queue is a drop-in replacement for the original.
-//
-// Note: WrapTypedQueue is a package-level function (not a method on *DSK) because
-// Go does not currently support generic methods. This will be addressable once
-// generic methods land in a future Go version; at that point WrapTypedQueue will
-// become d.WrapTypedQueue(q).
-func WrapTypedQueue[T comparable](d *DSK, q workqueue.TypedRateLimitingInterface[T]) workqueue.TypedRateLimitingInterface[T] {
+func (d *DSK) WrapTypedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T]) workqueue.TypedRateLimitingInterface[T] {
 	wq := newTypedWrappedQueue(q)
 	d.engine.registerQueue(wq)
 	return wq
