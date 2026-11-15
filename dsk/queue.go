@@ -19,6 +19,79 @@ type tickableQueue interface {
 	doneCh() <-chan struct{}
 	isIdle() bool
 	waitForIdle(ctx context.Context) error
+	pendingRequeues() requeueStatus
+}
+
+// requeueStatus summarises the delayed requeues a queue is holding.
+type requeueStatus struct {
+	pending bool      // any AddAfter (d > 0) or AddRateLimited requeue not yet dequeued
+	hasNext bool      // next is set: at least one pending requeue has a known deadline
+	next    time.Time // earliest known deadline
+}
+
+func (s requeueStatus) merge(o requeueStatus) requeueStatus {
+	s.pending = s.pending || o.pending
+	if o.hasNext && (!s.hasNext || o.next.Before(s.next)) {
+		s.hasNext, s.next = true, o.next
+	}
+	return s
+}
+
+// requeueTracker records delayed requeues that sit in the delaying queue's
+// heap, where Len() cannot see them. It is guarded by the owning wrapper's mu.
+type requeueTracker[T comparable] struct {
+	// after holds the AddAfter deadline per item. The delaying queue keeps only
+	// the earliest deadline for an item that is already waiting, so this does too.
+	after map[T]time.Time
+	// rateLimited holds AddRateLimited items. Their delay comes from the
+	// underlying rate limiter, which DSK cannot see, so they have no deadline.
+	rateLimited map[T]struct{}
+}
+
+func newRequeueTracker[T comparable]() requeueTracker[T] {
+	return requeueTracker[T]{after: make(map[T]time.Time), rateLimited: make(map[T]struct{})}
+}
+
+func (r *requeueTracker[T]) addAfter(item T, d time.Duration) {
+	if d <= 0 {
+		return // the delaying queue adds these immediately
+	}
+	now := time.Now()
+	deadline := now.Add(d)
+	// An expired deadline has already fired, so a new AddAfter is a new entry.
+	if cur, ok := r.after[item]; ok && cur.After(now) && !deadline.Before(cur) {
+		return
+	}
+	r.after[item] = deadline
+}
+
+func (r *requeueTracker[T]) addRateLimited(item T) {
+	r.rateLimited[item] = struct{}{}
+}
+
+// got records that item was dequeued. A deadline-tracked requeue is resolved
+// only once its deadline has passed, since an earlier Get came from another Add.
+// A rate-limited requeue is resolved by the next Get of the item.
+func (r *requeueTracker[T]) got(item T) {
+	if deadline, ok := r.after[item]; ok && !time.Now().Before(deadline) {
+		delete(r.after, item)
+	}
+	delete(r.rateLimited, item)
+}
+
+func (r *requeueTracker[T]) clear() {
+	clear(r.after)
+	clear(r.rateLimited)
+}
+
+func (r *requeueTracker[T]) status() requeueStatus {
+	s := requeueStatus{pending: len(r.after)+len(r.rateLimited) > 0}
+	for _, deadline := range r.after {
+		if !s.hasNext || deadline.Before(s.next) {
+			s.hasNext, s.next = true, deadline
+		}
+	}
+	return s
 }
 
 // wrappedQueue wraps workqueue.RateLimitingInterface to cooperate with DSK's
@@ -32,6 +105,7 @@ type wrappedQueue struct {
 	active     bool             // true if Add() or Get() was called during this tick window
 	windowOpen bool
 	done       chan struct{} // closed when tick is complete; reset each tick
+	requeues   requeueTracker[any]
 }
 
 func newWrappedQueue(q workqueue.RateLimitingInterface) *wrappedQueue {
@@ -39,6 +113,7 @@ func newWrappedQueue(q workqueue.RateLimitingInterface) *wrappedQueue {
 		RateLimitingInterface: q,
 		inFlight:              make(map[any]struct{}),
 		done:                  make(chan struct{}),
+		requeues:              newRequeueTracker[any](),
 	}
 	w.idleCond = sync.NewCond(&w.mu)
 	return w
@@ -77,12 +152,9 @@ func (w *wrappedQueue) doneCh() <-chan struct{} {
 // AddRateLimited/AddAfter and have cleared the rate limiter but not yet
 // been dequeued by a worker goroutine.
 //
-// Note: items added via AddRateLimited or AddAfter that have not yet cleared
-// the rate limiter (i.e., are still in the delay heap) are not visible to
-// Len() and are not counted here. In practice, DSK's tick model means
-// controllers call AddRateLimited with zero or near-zero delays, so this
-// window is negligible. If a controller uses significant rate-limit delays,
-// IsSteady() may return a transient false positive until the delay expires.
+// Items still in the delay heap (AddRateLimited, or AddAfter with d > 0) are
+// not visible to Len() and are not counted here; requeueTracker reports them
+// separately via pendingRequeues.
 func (w *wrappedQueue) isIdle() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -101,14 +173,44 @@ func (w *wrappedQueue) Add(item any) {
 	w.mu.Unlock()
 }
 
-// AddRateLimited is a controller-triggered requeue. Not counted as this tick's work.
+// AddRateLimited is a controller-triggered requeue. Not counted as this tick's
+// work, but recorded as a pending requeue until the item is next dequeued.
 func (w *wrappedQueue) AddRateLimited(item any) {
+	w.mu.Lock()
+	w.requeues.addRateLimited(item)
+	w.mu.Unlock()
 	w.RateLimitingInterface.AddRateLimited(item)
 }
 
-// AddAfter is a controller-triggered requeue. Not counted as this tick's work.
+// AddAfter is a controller-triggered requeue. Not counted as this tick's work,
+// but a positive duration is recorded as a pending requeue with its deadline.
 func (w *wrappedQueue) AddAfter(item any, duration time.Duration) {
+	w.mu.Lock()
+	w.requeues.addAfter(item, duration)
+	w.mu.Unlock()
 	w.RateLimitingInterface.AddAfter(item, duration)
+}
+
+// ShutDown clears pending requeues: the delaying queue drops them on shutdown.
+func (w *wrappedQueue) ShutDown() {
+	w.RateLimitingInterface.ShutDown()
+	w.mu.Lock()
+	w.requeues.clear()
+	w.mu.Unlock()
+}
+
+// ShutDownWithDrain clears pending requeues: the delaying queue drops them on shutdown.
+func (w *wrappedQueue) ShutDownWithDrain() {
+	w.RateLimitingInterface.ShutDownWithDrain()
+	w.mu.Lock()
+	w.requeues.clear()
+	w.mu.Unlock()
+}
+
+func (w *wrappedQueue) pendingRequeues() requeueStatus {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.requeues.status()
 }
 
 // Get intercepts key dequeuing. Keys dequeued during an open window are tracked as in-flight.
@@ -116,6 +218,7 @@ func (w *wrappedQueue) Get() (any, bool) {
 	item, shutdown := w.RateLimitingInterface.Get()
 	if !shutdown {
 		w.mu.Lock()
+		w.requeues.got(item)
 		if w.windowOpen {
 			w.inFlight[item] = struct{}{}
 			w.active = true
@@ -206,6 +309,7 @@ type typedWrappedQueue[T comparable] struct {
 	active     bool
 	windowOpen bool
 	done       chan struct{}
+	requeues   requeueTracker[T]
 }
 
 func newTypedWrappedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T]) *typedWrappedQueue[T] {
@@ -213,6 +317,7 @@ func newTypedWrappedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T
 		TypedRateLimitingInterface: q,
 		inFlight:                   make(map[T]struct{}),
 		done:                       make(chan struct{}),
+		requeues:                   newRequeueTracker[T](),
 	}
 	w.idleCond = sync.NewCond(&w.mu)
 	return w
@@ -256,10 +361,45 @@ func (w *typedWrappedQueue[T]) Add(item T) {
 	w.mu.Unlock()
 }
 
+func (w *typedWrappedQueue[T]) AddRateLimited(item T) {
+	w.mu.Lock()
+	w.requeues.addRateLimited(item)
+	w.mu.Unlock()
+	w.TypedRateLimitingInterface.AddRateLimited(item)
+}
+
+func (w *typedWrappedQueue[T]) AddAfter(item T, duration time.Duration) {
+	w.mu.Lock()
+	w.requeues.addAfter(item, duration)
+	w.mu.Unlock()
+	w.TypedRateLimitingInterface.AddAfter(item, duration)
+}
+
+func (w *typedWrappedQueue[T]) ShutDown() {
+	w.TypedRateLimitingInterface.ShutDown()
+	w.mu.Lock()
+	w.requeues.clear()
+	w.mu.Unlock()
+}
+
+func (w *typedWrappedQueue[T]) ShutDownWithDrain() {
+	w.TypedRateLimitingInterface.ShutDownWithDrain()
+	w.mu.Lock()
+	w.requeues.clear()
+	w.mu.Unlock()
+}
+
+func (w *typedWrappedQueue[T]) pendingRequeues() requeueStatus {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.requeues.status()
+}
+
 func (w *typedWrappedQueue[T]) Get() (T, bool) {
 	item, shutdown := w.TypedRateLimitingInterface.Get()
 	if !shutdown {
 		w.mu.Lock()
+		w.requeues.got(item)
 		if w.windowOpen {
 			w.inFlight[item] = struct{}{}
 			w.active = true

@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"testing/synctest"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
@@ -301,15 +303,108 @@ func (d *DSK) TickUntilSteady(n int) {
 // IsSteady returns true when the event buffer is empty and all registered
 // queue wrappers have no pending or in-flight keys.
 //
-// Rate-limiter delay caveat: items requeued via AddRateLimited or AddAfter with
-// a non-zero duration are held in the rate-limiter's delay heap and are not
-// visible to queue.Len(). IsSteady may return a transient false positive until
-// those items clear the delay and enter the queue. Running the test inside a
-// testing/synctest bubble makes time virtual: calling synctest.Wait() advances
-// time past all pending delays, so AddRateLimited/AddAfter items surface
-// immediately and IsSteady reflects true quiescence.
+// IsSteady does not count delayed requeues: items requeued via AddAfter with a
+// positive duration, or via AddRateLimited, wait in the delaying queue's heap
+// where queue.Len() cannot see them. A controller can be steady now and still
+// have a requeue due later. Use HasPendingRequeues to tell the two apart, and
+// Advance to move virtual time forward so the requeue surfaces.
 func (d *DSK) IsSteady() bool {
 	return d.engine.isSteady()
+}
+
+// HasPendingRequeues reports whether any wrapped queue holds a delayed requeue
+// that has not yet been dequeued: an AddAfter with a positive duration, or an
+// AddRateLimited. Together with IsSteady it separates "steady" (IsSteady and
+// !HasPendingRequeues) from "steady until a requeue fires" (IsSteady and
+// HasPendingRequeues).
+//
+// An AddAfter requeue is pending until its item is dequeued at or after its
+// deadline. An AddRateLimited requeue is pending until its item is next
+// dequeued, because DSK cannot see the delay that the rate limiter picks.
+// ShutDown clears all pending requeues for that queue.
+func (d *DSK) HasPendingRequeues() bool {
+	return d.engine.pendingRequeues().pending
+}
+
+// NextRequeue returns the time until the earliest pending AddAfter requeue
+// fires, measured on the current clock (the bubble's clock inside a
+// testing/synctest bubble). ok is false when no AddAfter requeue is pending.
+// The duration is zero if the deadline has already passed.
+//
+// AddRateLimited requeues have no deadline that DSK can see, so they are not
+// counted here. If HasPendingRequeues is true but NextRequeue returns false,
+// call Advance with a duration that covers the rate limiter's delay.
+//
+// Pair it with Advance to move exactly to the next requeue:
+//
+//	if dur, ok := d.NextRequeue(); ok {
+//		d.Advance(dur)
+//	}
+func (d *DSK) NextRequeue() (time.Duration, bool) {
+	s := d.engine.pendingRequeues()
+	if !s.hasNext {
+		return 0, false
+	}
+	return max(time.Until(s.next), 0), true
+}
+
+// Advance moves virtual time forward by dur, then ticks. It must be called
+// from inside a testing/synctest bubble, and calls tb.Fatal otherwise.
+//
+// Advance calls synctest.Sleep(dur): the bubble's clock moves forward by dur,
+// timers that are due fire (including delayed requeues in wrapped queues), and
+// Advance waits until every other goroutine in the bubble is durably blocked.
+// Controllers dequeue and reconcile the surfaced items during that wait. Advance
+// then ticks once and waits for the queues to drain, as one TickUntilSteady
+// step does, so the watch events that those reconciles caused are delivered.
+// Finally it waits for the bubble to settle again. Call TickUntilSteady
+// afterwards if the controller needs more ticks to settle.
+//
+// Bubble requirements:
+//   - Call New with the bubble's t, inside synctest.Test. DSK's watch drain
+//     goroutines select on tb.Context().Done(); a context from outside the
+//     bubble is never durably blocking, and Advance would never return. (New
+//     with an outer t is fine for Tick, Flush and WaitForEvents, but not here.)
+//   - Create the work queues and start the controllers inside the bubble, so
+//     their timers use the bubble's clock.
+//   - Every goroutine in the bubble must eventually block durably. Network I/O
+//     is not durably blocking, so Advance does not work with DynamicFromConfig
+//     or TypedFromConfig while a watch is open. Use fake clients.
+func (d *DSK) Advance(dur time.Duration) {
+	d.helper()
+	if dur < 0 {
+		d.tb.Fatalf("dsk: Advance requires dur >= 0, got %v", dur)
+		return
+	}
+	if !inBubble() {
+		d.tb.Fatal("dsk: Advance must be called inside a testing/synctest bubble")
+		return
+	}
+	synctest.Sleep(dur)
+	if err := d.tick(d.tb.Context()); err != nil {
+		d.tb.Fatal(err)
+		return
+	}
+	if err := d.engine.waitForQueuesIdle(d.tb.Context()); err != nil {
+		d.tb.Fatal(err)
+		return
+	}
+	// A worker whose Get lands after the tick window closes is not tracked by
+	// the tick, so settle the bubble again before returning.
+	synctest.Wait()
+}
+
+// inBubble reports whether the calling goroutine is in a testing/synctest
+// bubble. synctest.Wait panics outside a bubble; inside one it only waits for
+// the other goroutines to block, which Advance does next anyway.
+func inBubble() (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	synctest.Wait()
+	return true
 }
 
 // InjectFault adds a fault to the DSK instance. Returns a handle for removal.

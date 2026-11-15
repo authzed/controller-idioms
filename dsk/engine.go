@@ -609,3 +609,15 @@ func (e *engine) isSteady() bool {
 	}
 	return true
 }
+
+// pendingRequeues merges the delayed-requeue status of all registered queues.
+// Acquires engine.mu then each queue's mu, per the lock ordering above.
+func (e *engine) pendingRequeues() requeueStatus {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var s requeueStatus
+	for _, q := range e.queues {
+		s = s.merge(q.pendingRequeues())
+	}
+	return s
+}

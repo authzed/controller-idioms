@@ -108,6 +108,9 @@ d.Tick()                                // flush all buffered events (= Flush(Bu
 d.Ticks(n)                              // Tick n times
 d.TickUntilSteady(n)                    // Tick up to n times; tb.Fatal if not steady
 ok  := d.IsSteady()                    // true when buffer empty and all queues idle
+ok  := d.HasPendingRequeues()          // true when an AddAfter/AddRateLimited requeue has not fired yet
+dur, ok := d.NextRequeue()             // time until the earliest pending AddAfter requeue
+d.Advance(dur)                         // synctest only: move virtual time by dur, then tick
 ```
 
 ### `PendingEvent`
@@ -148,6 +151,43 @@ Tick until `IsSteady()` or fail at a max-tick limit. The test fails clearly inst
 ```go
 d.TickUntilSteady(20)
 ```
+
+### Delayed requeues and virtual time
+
+`IsSteady()` cannot see requeues that wait in the delaying queue (`AddAfter` with a positive duration, or `AddRateLimited`). The queue wrappers record them, so `HasPendingRequeues()` separates "steady" from "steady until a requeue fires". `NextRequeue()` returns the time until the earliest `AddAfter` deadline. `Advance(dur)` runs `synctest.Sleep(dur)` on the bubble's clock, so due requeues fire and the controller reconciles them. Then it ticks.
+
+```go
+func TestRequeue(t *testing.T) {
+    synctest.Test(t, func(t *testing.T) {
+        d := dsk.New(t) // the bubble's t, not the outer one
+        client := d.Dynamic(fake.NewClient(scheme))
+        q := d.WrapTypedQueue(workqueue.NewTypedRateLimitingQueue(
+            workqueue.DefaultTypedControllerRateLimiter[string]()))
+        defer q.ShutDown()
+        go myController.Run(t.Context(), client, q) // calls q.AddAfter(key, 5*time.Minute)
+
+        createResource(client, myResource)
+        d.TickUntilSteady(20)
+
+        for d.HasPendingRequeues() {
+            dur, ok := d.NextRequeue()
+            if !ok {
+                t.Fatal("only rate-limited requeues pending; Advance by the limiter's delay")
+            }
+            d.Advance(dur) // virtual time; returns immediately
+            d.TickUntilSteady(20)
+        }
+    })
+}
+```
+
+`Advance` must run inside a `testing/synctest` bubble, and calls `tb.Fatal` otherwise. The bubble has these requirements:
+
+- Call `dsk.New` with the bubble's `t`. DSK's watch drain goroutines select on `tb.Context().Done()`. A context from outside the bubble never blocks durably, so `synctest.Sleep` never returns. `New` with an outer `t` still works for `Tick`, `Flush` and `WaitForEvents`, because `New` initialises `tb.Context().Done()` before the bubble starts. It does not work for `Advance`.
+- Create the work queues and start the controllers inside the bubble, so their timers use the bubble's clock.
+- Every goroutine in the bubble must eventually block durably. Network I/O does not, so use fake clients. `DynamicFromConfig` and `TypedFromConfig` with an open watch do not work with `Advance`.
+
+`AddRateLimited` delays come from the rate limiter, which DSK cannot see. These requeues count in `HasPendingRequeues()` until their item is next dequeued, but `NextRequeue()` ignores them. Advance by a duration that covers the limiter's delay.
 
 ### Event ordering (manual)
 
@@ -199,7 +239,8 @@ rapid.Check(t, func(t *rapid.T) {
 ## Limitations
 
 - **In-process only.** DSK mediates calls to an existing Kubernetes client — it does not run its own API server. This is by design: DSK works with whatever client your controller already uses (envtest, kind, fake), so there is nothing new to deploy or configure.
-- **Rate-limiter delay heap is not visible.** Items queued via `AddRateLimited` or `AddAfter(d > 0)` that have not yet cleared the delay heap are not counted by `Len()`. `IsSteady()` may return a transient false positive until the delay expires. Running tests inside a `testing/synctest` bubble and calling `synctest.Wait()` advances virtual time past all pending delays, making `IsSteady()` reflect true quiescence.
+- **`IsSteady()` ignores the delay heap.** `Len()` does not count items queued via `AddRateLimited` or `AddAfter(d > 0)` until they leave the delay heap, so `IsSteady()` can be true while a requeue is still due. Check `HasPendingRequeues()` too, and use `Advance` inside a `testing/synctest` bubble to fire the requeue (see [Delayed requeues and virtual time](#delayed-requeues-and-virtual-time)). `synctest.Wait()` by itself does not advance time.
+- **Rate-limited delays are not known.** `NextRequeue()` reports only `AddAfter` deadlines. The rate limiter picks the `AddRateLimited` delay, and DSK cannot see it.
 
 ## Static analysis
 
