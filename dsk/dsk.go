@@ -164,7 +164,7 @@ func (d *DSK) TypedFromConfig(cfg *rest.Config) (kubernetes.Interface, error) {
 // The returned queue is a drop-in replacement for the original.
 // Register all controller queues before calling Tick or Flush.
 func (d *DSK) WrapQueue(q workqueue.RateLimitingInterface) workqueue.RateLimitingInterface {
-	wq := newWrappedQueue(q)
+	wq := newWrappedQueue[any](q)
 	d.engine.registerQueue(wq)
 	return wq
 }
@@ -174,7 +174,7 @@ func (d *DSK) WrapQueue(q workqueue.RateLimitingInterface) workqueue.RateLimitin
 // workqueue.TypedRateLimitingInterface[T] directly (e.g. TypedRateLimitingInterface[string]).
 // The returned queue is a drop-in replacement for the original.
 func (d *DSK) WrapTypedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T]) workqueue.TypedRateLimitingInterface[T] {
-	wq := newTypedWrappedQueue(q)
+	wq := newWrappedQueue(q)
 	d.engine.registerQueue(wq)
 	return wq
 }

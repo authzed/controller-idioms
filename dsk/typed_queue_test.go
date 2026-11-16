@@ -12,7 +12,7 @@ func TestTypedWrappedQueue_CooperativeCompletion(t *testing.T) {
 	underlying := workqueue.NewTypedRateLimitingQueue[string](workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer underlying.ShutDown()
 
-	wq := newTypedWrappedQueue(underlying)
+	wq := newWrappedQueue(underlying)
 
 	wq.beginTick()
 
@@ -44,7 +44,7 @@ func TestTypedWrappedQueue_RequeueNotTracked(t *testing.T) {
 	underlying := workqueue.NewTypedRateLimitingQueue[string](workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer underlying.ShutDown()
 
-	wq := newTypedWrappedQueue(underlying)
+	wq := newWrappedQueue(underlying)
 
 	wq.beginTick()
 	wq.Add("key1")
@@ -65,7 +65,7 @@ func TestTypedWrappedQueue_EmptyTickCompletes(t *testing.T) {
 	underlying := workqueue.NewTypedRateLimitingQueue[string](workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer underlying.ShutDown()
 
-	wq := newTypedWrappedQueue(underlying)
+	wq := newWrappedQueue(underlying)
 
 	wq.beginTick()
 	wq.closeWindow()
@@ -81,7 +81,7 @@ func TestTypedWrappedQueue_IsIdle_WithItemInUnderlyingQueue(t *testing.T) {
 	underlying := workqueue.NewTypedRateLimitingQueue[string](workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer underlying.ShutDown()
 
-	wq := newTypedWrappedQueue(underlying)
+	wq := newWrappedQueue(underlying)
 
 	underlying.Add("key1")
 
@@ -101,7 +101,7 @@ func TestTypedWrappedQueue_IsIdle(t *testing.T) {
 	underlying := workqueue.NewTypedRateLimitingQueue[string](workqueue.DefaultTypedControllerRateLimiter[string]())
 	defer underlying.ShutDown()
 
-	wq := newTypedWrappedQueue(underlying)
+	wq := newWrappedQueue(underlying)
 	if !wq.isIdle() {
 		t.Fatal("expected idle queue to be idle")
 	}

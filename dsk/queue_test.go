@@ -12,7 +12,7 @@ func TestWrappedQueue_CooperativeCompletion(t *testing.T) {
 	underlying := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 	defer underlying.ShutDown()
 
-	wq := newWrappedQueue(underlying)
+	wq := newWrappedQueue[any](underlying)
 
 	wq.beginTick()
 
@@ -49,7 +49,7 @@ func TestWrappedQueue_RequeueNotTracked(t *testing.T) {
 	underlying := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 	defer underlying.ShutDown()
 
-	wq := newWrappedQueue(underlying)
+	wq := newWrappedQueue[any](underlying)
 
 	wq.beginTick()
 	wq.Add("key1")
@@ -72,7 +72,7 @@ func TestWrappedQueue_EmptyTickCompletes(t *testing.T) {
 	underlying := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 	defer underlying.ShutDown()
 
-	wq := newWrappedQueue(underlying)
+	wq := newWrappedQueue[any](underlying)
 
 	wq.beginTick()
 	// No Add() calls — nothing to wait for
@@ -89,7 +89,7 @@ func TestWrappedQueue_IsIdle_WithItemInUnderlyingQueue(t *testing.T) {
 	underlying := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 	defer underlying.ShutDown()
 
-	wq := newWrappedQueue(underlying)
+	wq := newWrappedQueue[any](underlying)
 
 	// Add directly to the underlying queue (bypassing the wrapped Add) to
 	// simulate an item that has already cleared the rate limiter and is
@@ -113,7 +113,7 @@ func TestWrappedQueue_IsIdle(t *testing.T) {
 	underlying := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 	defer underlying.ShutDown()
 
-	wq := newWrappedQueue(underlying)
+	wq := newWrappedQueue[any](underlying)
 	if !wq.isIdle() {
 		t.Fatal("expected idle queue to be idle")
 	}

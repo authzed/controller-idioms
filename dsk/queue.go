@@ -11,8 +11,7 @@ import (
 )
 
 // tickableQueue is the internal interface the engine uses to coordinate ticks
-// across registered queue wrappers. Both wrappedQueue (untyped) and
-// typedWrappedQueue[T] (generic) implement it.
+// across registered queue wrappers.
 type tickableQueue interface {
 	beginTick()
 	closeWindow()
@@ -94,26 +93,28 @@ func (r *requeueTracker[T]) status() requeueStatus {
 	return s
 }
 
-// wrappedQueue wraps workqueue.RateLimitingInterface to cooperate with DSK's
-// tick engine.
-type wrappedQueue struct {
-	workqueue.RateLimitingInterface
+// wrappedQueue wraps a workqueue.TypedRateLimitingInterface[T] to cooperate
+// with DSK's tick engine. It implements both TypedRateLimitingInterface[T] and
+// tickableQueue. WrapQueue uses wrappedQueue[any]: client-go defines
+// RateLimitingInterface as TypedRateLimitingInterface[any].
+type wrappedQueue[T comparable] struct {
+	workqueue.TypedRateLimitingInterface[T]
 
 	mu         sync.Mutex
 	idleCond   *sync.Cond
-	inFlight   map[any]struct{} // keys between Get and Done dequeued during an open window
-	active     bool             // true if Add() or Get() was called during this tick window
+	inFlight   map[T]struct{} // keys between Get and Done dequeued during an open window
+	active     bool           // true if Add() or Get() was called during this tick window
 	windowOpen bool
 	done       chan struct{} // closed when tick is complete; reset each tick
-	requeues   requeueTracker[any]
+	requeues   requeueTracker[T]
 }
 
-func newWrappedQueue(q workqueue.RateLimitingInterface) *wrappedQueue {
-	w := &wrappedQueue{
-		RateLimitingInterface: q,
-		inFlight:              make(map[any]struct{}),
-		done:                  make(chan struct{}),
-		requeues:              newRequeueTracker[any](),
+func newWrappedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T]) *wrappedQueue[T] {
+	w := &wrappedQueue[T]{
+		TypedRateLimitingInterface: q,
+		inFlight:                   make(map[T]struct{}),
+		done:                       make(chan struct{}),
+		requeues:                   newRequeueTracker[T](),
 	}
 	w.idleCond = sync.NewCond(&w.mu)
 	return w
@@ -121,10 +122,10 @@ func newWrappedQueue(q workqueue.RateLimitingInterface) *wrappedQueue {
 
 // beginTick opens the Get() tracking window and resets tick state.
 // Called at the start of each Flush.
-func (w *wrappedQueue) beginTick() {
+func (w *wrappedQueue[T]) beginTick() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.inFlight = make(map[any]struct{})
+	w.inFlight = make(map[T]struct{})
 	w.active = false
 	w.windowOpen = true
 	w.done = make(chan struct{})
@@ -132,7 +133,7 @@ func (w *wrappedQueue) beginTick() {
 
 // closeWindow closes the tick window and checks for completion.
 // Called after events are flushed and handlers have returned.
-func (w *wrappedQueue) closeWindow() {
+func (w *wrappedQueue[T]) closeWindow() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.windowOpen = false
@@ -141,7 +142,7 @@ func (w *wrappedQueue) closeWindow() {
 
 // doneCh returns the current tick's completion channel.
 // Callers must not invoke beginTick concurrently while waiting on the returned channel.
-func (w *wrappedQueue) doneCh() <-chan struct{} {
+func (w *wrappedQueue[T]) doneCh() <-chan struct{} {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.done
@@ -155,16 +156,16 @@ func (w *wrappedQueue) doneCh() <-chan struct{} {
 // Items still in the delay heap (AddRateLimited, or AddAfter with d > 0) are
 // not visible to Len() and are not counted here; requeueTracker reports them
 // separately via pendingRequeues.
-func (w *wrappedQueue) isIdle() bool {
+func (w *wrappedQueue[T]) isIdle() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return len(w.inFlight) == 0 && w.RateLimitingInterface.Len() == 0
+	return len(w.inFlight) == 0 && w.TypedRateLimitingInterface.Len() == 0
 }
 
 // Add intercepts item enqueuing. Items added during an open window mark this
 // tick as active so waitForIdle knows to wait for them to be processed.
-func (w *wrappedQueue) Add(item any) {
-	w.RateLimitingInterface.Add(item)
+func (w *wrappedQueue[T]) Add(item T) {
+	w.TypedRateLimitingInterface.Add(item)
 	w.mu.Lock()
 	if w.windowOpen {
 		w.active = true
@@ -175,47 +176,47 @@ func (w *wrappedQueue) Add(item any) {
 
 // AddRateLimited is a controller-triggered requeue. Not counted as this tick's
 // work, but recorded as a pending requeue until the item is next dequeued.
-func (w *wrappedQueue) AddRateLimited(item any) {
+func (w *wrappedQueue[T]) AddRateLimited(item T) {
 	w.mu.Lock()
 	w.requeues.addRateLimited(item)
 	w.mu.Unlock()
-	w.RateLimitingInterface.AddRateLimited(item)
+	w.TypedRateLimitingInterface.AddRateLimited(item)
 }
 
 // AddAfter is a controller-triggered requeue. Not counted as this tick's work,
 // but a positive duration is recorded as a pending requeue with its deadline.
-func (w *wrappedQueue) AddAfter(item any, duration time.Duration) {
+func (w *wrappedQueue[T]) AddAfter(item T, duration time.Duration) {
 	w.mu.Lock()
 	w.requeues.addAfter(item, duration)
 	w.mu.Unlock()
-	w.RateLimitingInterface.AddAfter(item, duration)
+	w.TypedRateLimitingInterface.AddAfter(item, duration)
 }
 
 // ShutDown clears pending requeues: the delaying queue drops them on shutdown.
-func (w *wrappedQueue) ShutDown() {
-	w.RateLimitingInterface.ShutDown()
+func (w *wrappedQueue[T]) ShutDown() {
+	w.TypedRateLimitingInterface.ShutDown()
 	w.mu.Lock()
 	w.requeues.clear()
 	w.mu.Unlock()
 }
 
 // ShutDownWithDrain clears pending requeues: the delaying queue drops them on shutdown.
-func (w *wrappedQueue) ShutDownWithDrain() {
-	w.RateLimitingInterface.ShutDownWithDrain()
+func (w *wrappedQueue[T]) ShutDownWithDrain() {
+	w.TypedRateLimitingInterface.ShutDownWithDrain()
 	w.mu.Lock()
 	w.requeues.clear()
 	w.mu.Unlock()
 }
 
-func (w *wrappedQueue) pendingRequeues() requeueStatus {
+func (w *wrappedQueue[T]) pendingRequeues() requeueStatus {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.requeues.status()
 }
 
 // Get intercepts key dequeuing. Keys dequeued during an open window are tracked as in-flight.
-func (w *wrappedQueue) Get() (any, bool) {
-	item, shutdown := w.RateLimitingInterface.Get()
+func (w *wrappedQueue[T]) Get() (T, bool) {
+	item, shutdown := w.TypedRateLimitingInterface.Get()
 	if !shutdown {
 		w.mu.Lock()
 		w.requeues.got(item)
@@ -232,8 +233,8 @@ func (w *wrappedQueue) Get() (any, bool) {
 
 // Done intercepts reconcile completion. Removes the key from in-flight tracking
 // and checks whether the tick is now complete.
-func (w *wrappedQueue) Done(item any) {
-	w.RateLimitingInterface.Done(item)
+func (w *wrappedQueue[T]) Done(item T) {
+	w.TypedRateLimitingInterface.Done(item)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	delete(w.inFlight, item)
@@ -251,186 +252,7 @@ func (w *wrappedQueue) Done(item any) {
 // that items requeued inside a tick (via Add by handlers, or via AddAfter/Done
 // dirty path) are drained within the same tick window rather than leaking into
 // IsSteady checks after the tick returns.
-func (w *wrappedQueue) waitForIdle(ctx context.Context) error {
-	stopCh := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			w.idleCond.Broadcast()
-		case <-stopCh:
-		}
-	}()
-	defer close(stopCh)
-
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if !w.active {
-		return ctx.Err()
-	}
-	for len(w.inFlight) > 0 || w.RateLimitingInterface.Len() > 0 {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		w.idleCond.Wait()
-	}
-	return ctx.Err()
-}
-
-// checkDoneLocked closes the done channel if the tick is complete:
-// window closed and nothing in flight. The tick is considered complete once
-// all items that were dequeued (Get) during the open window have been
-// finished (Done). Items sitting in the queue but never dequeued do not
-// block tick completion — use IsSteady() to detect a fully quiescent state.
-//
-// Lock ordering: w.mu is the only lock acquired here. engine.mu is
-// released before any wrappedQueue method is called, so no inversion.
-//
-// Must be called with w.mu held.
-func (w *wrappedQueue) checkDoneLocked() {
-	if !w.windowOpen && len(w.inFlight) == 0 {
-		select {
-		case <-w.done:
-			// already closed
-		default:
-			close(w.done)
-		}
-	}
-}
-
-// typedWrappedQueue is the generic counterpart of wrappedQueue for
-// controllers that use workqueue.TypedRateLimitingInterface[T] directly.
-// It implements both TypedRateLimitingInterface[T] and tickableQueue.
-type typedWrappedQueue[T comparable] struct {
-	workqueue.TypedRateLimitingInterface[T]
-
-	mu         sync.Mutex
-	idleCond   *sync.Cond
-	inFlight   map[T]struct{}
-	active     bool
-	windowOpen bool
-	done       chan struct{}
-	requeues   requeueTracker[T]
-}
-
-func newTypedWrappedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T]) *typedWrappedQueue[T] {
-	w := &typedWrappedQueue[T]{
-		TypedRateLimitingInterface: q,
-		inFlight:                   make(map[T]struct{}),
-		done:                       make(chan struct{}),
-		requeues:                   newRequeueTracker[T](),
-	}
-	w.idleCond = sync.NewCond(&w.mu)
-	return w
-}
-
-func (w *typedWrappedQueue[T]) beginTick() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.inFlight = make(map[T]struct{})
-	w.active = false
-	w.windowOpen = true
-	w.done = make(chan struct{})
-}
-
-func (w *typedWrappedQueue[T]) closeWindow() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.windowOpen = false
-	w.checkDoneLocked()
-}
-
-func (w *typedWrappedQueue[T]) doneCh() <-chan struct{} {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.done
-}
-
-func (w *typedWrappedQueue[T]) isIdle() bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return len(w.inFlight) == 0 && w.TypedRateLimitingInterface.Len() == 0
-}
-
-func (w *typedWrappedQueue[T]) Add(item T) {
-	w.TypedRateLimitingInterface.Add(item)
-	w.mu.Lock()
-	if w.windowOpen {
-		w.active = true
-	}
-	w.idleCond.Broadcast()
-	w.mu.Unlock()
-}
-
-func (w *typedWrappedQueue[T]) AddRateLimited(item T) {
-	w.mu.Lock()
-	w.requeues.addRateLimited(item)
-	w.mu.Unlock()
-	w.TypedRateLimitingInterface.AddRateLimited(item)
-}
-
-func (w *typedWrappedQueue[T]) AddAfter(item T, duration time.Duration) {
-	w.mu.Lock()
-	w.requeues.addAfter(item, duration)
-	w.mu.Unlock()
-	w.TypedRateLimitingInterface.AddAfter(item, duration)
-}
-
-func (w *typedWrappedQueue[T]) ShutDown() {
-	w.TypedRateLimitingInterface.ShutDown()
-	w.mu.Lock()
-	w.requeues.clear()
-	w.mu.Unlock()
-}
-
-func (w *typedWrappedQueue[T]) ShutDownWithDrain() {
-	w.TypedRateLimitingInterface.ShutDownWithDrain()
-	w.mu.Lock()
-	w.requeues.clear()
-	w.mu.Unlock()
-}
-
-func (w *typedWrappedQueue[T]) pendingRequeues() requeueStatus {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.requeues.status()
-}
-
-func (w *typedWrappedQueue[T]) Get() (T, bool) {
-	item, shutdown := w.TypedRateLimitingInterface.Get()
-	if !shutdown {
-		w.mu.Lock()
-		w.requeues.got(item)
-		if w.windowOpen {
-			w.inFlight[item] = struct{}{}
-			w.active = true
-		}
-		// Broadcast so waitForIdle can re-check Len() now that an item was dequeued.
-		w.idleCond.Broadcast()
-		w.mu.Unlock()
-	}
-	return item, shutdown
-}
-
-func (w *typedWrappedQueue[T]) Done(item T) {
-	w.TypedRateLimitingInterface.Done(item)
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	delete(w.inFlight, item)
-	w.checkDoneLocked()
-	w.idleCond.Broadcast()
-}
-
-func (w *typedWrappedQueue[T]) checkDoneLocked() {
-	if !w.windowOpen && len(w.inFlight) == 0 {
-		select {
-		case <-w.done:
-		default:
-			close(w.done)
-		}
-	}
-}
-
-func (w *typedWrappedQueue[T]) waitForIdle(ctx context.Context) error {
+func (w *wrappedQueue[T]) waitForIdle(ctx context.Context) error {
 	stopCh := make(chan struct{})
 	go func() {
 		select {
@@ -453,4 +275,25 @@ func (w *typedWrappedQueue[T]) waitForIdle(ctx context.Context) error {
 		w.idleCond.Wait()
 	}
 	return ctx.Err()
+}
+
+// checkDoneLocked closes the done channel if the tick is complete:
+// window closed and nothing in flight. The tick is considered complete once
+// all items that were dequeued (Get) during the open window have been
+// finished (Done). Items sitting in the queue but never dequeued do not
+// block tick completion — use IsSteady() to detect a fully quiescent state.
+//
+// Lock ordering: w.mu is the only lock acquired here. engine.mu is
+// released before any wrappedQueue method is called, so no inversion.
+//
+// Must be called with w.mu held.
+func (w *wrappedQueue[T]) checkDoneLocked() {
+	if !w.windowOpen && len(w.inFlight) == 0 {
+		select {
+		case <-w.done:
+			// already closed
+		default:
+			close(w.done)
+		}
+	}
 }
