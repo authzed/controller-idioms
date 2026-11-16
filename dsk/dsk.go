@@ -213,6 +213,12 @@ func (d *DSK) Buffer() []PendingEvent {
 // Flush delivers the given events to their watch streams and waits for all
 // triggered reconciles to complete before returning.
 //
+// Flush waits for a queued item only while a worker is draining that queue:
+// one is parked in Get, holds an item, or took one during this Flush. With no
+// worker, Flush returns with the items still queued, so a test can drain the
+// queue by hand. A worker that has not yet reached its first Get when the
+// handlers finish is not seen; TickUntilSteady still waits for its reconcile.
+//
 // events must be values returned by a prior call to Buffer(). Do not modify
 // the Event.Object field of returned PendingEvent values — removal matching
 // relies on object pointer identity, and re-constructing events bypasses that.
@@ -273,14 +279,15 @@ func (d *DSK) Ticks(n int) {
 // TickUntilSteady ticks up to n times, returning after the first tick where
 // IsSteady is true. Calls tb.Fatal if steady state is not reached within n ticks.
 //
-// After each tick, TickUntilSteady waits for all registered queues to fully
-// drain before checking IsSteady. This handles items requeued within a tick
-// (e.g. via Add in a handler, or via AddAfter/Done dirty path): the second
-// processing round completes before the steady-state check, so a controller
-// that requeues once converges in a single tick rather than requiring n>1.
-// Queues that had no activity (no Add or Get calls) during the tick are not
-// waited on, so TickUntilSteady still exhausts its tick budget when the queue
-// has stuck items that are never processed.
+// After each tick, TickUntilSteady waits until no registered queue owes work:
+// every item added has been dequeued and is Done, including an item re-added
+// while it was processing and an AddAfter requeue whose deadline has passed.
+// So a controller that requeues once converges in a single tick rather than
+// requiring n>1, and a reconcile that starts after the tick's window closes is
+// still waited for. A queue with no worker draining it, and no Add or Get
+// during the tick's window, is not waited on, so TickUntilSteady still
+// exhausts its tick budget when the queue has stuck items that are never
+// processed.
 func (d *DSK) TickUntilSteady(n int) {
 	d.helper()
 	if n <= 0 {
@@ -300,12 +307,12 @@ func (d *DSK) TickUntilSteady(n int) {
 	d.tb.Fatalf("controller did not reach steady state after %d ticks", n)
 }
 
-// IsSteady returns true when the event buffer is empty and all registered
-// queue wrappers have no pending or in-flight keys.
+// IsSteady returns true when the event buffer is empty and no registered queue
+// owes work: nothing is queued or processing.
 //
-// IsSteady does not count delayed requeues: items requeued via AddAfter with a
-// positive duration, or via AddRateLimited, wait in the delaying queue's heap
-// where queue.Len() cannot see them. A controller can be steady now and still
+// IsSteady does not count delayed requeues that are not yet due: items
+// requeued via AddAfter with a positive duration, or via AddRateLimited, wait
+// in the delaying queue's heap where queue.Len() cannot see them. A controller can be steady now and still
 // have a requeue due later. Use HasPendingRequeues to tell the two apart, and
 // Advance to move virtual time forward so the requeue surfaces.
 func (d *DSK) IsSteady() bool {
@@ -356,9 +363,9 @@ func (d *DSK) NextRequeue() (time.Duration, bool) {
 // Advance waits until every other goroutine in the bubble is durably blocked.
 // Controllers dequeue and reconcile the surfaced items during that wait. Advance
 // then ticks once and waits for the queues to drain, as one TickUntilSteady
-// step does, so the watch events that those reconciles caused are delivered.
-// Finally it waits for the bubble to settle again. Call TickUntilSteady
-// afterwards if the controller needs more ticks to settle.
+// step does, so the watch events that those reconciles caused are delivered and
+// every reconcile has finished, even one that sleeps past dur. Call
+// TickUntilSteady afterwards if the controller needs more ticks to settle.
 //
 // Bubble requirements:
 //   - Call New with the bubble's t, inside synctest.Test. DSK's watch drain
@@ -387,11 +394,7 @@ func (d *DSK) Advance(dur time.Duration) {
 	}
 	if err := d.engine.waitForQueuesIdle(d.tb.Context()); err != nil {
 		d.tb.Fatal(err)
-		return
 	}
-	// A worker whose Get lands after the tick window closes is not tracked by
-	// the tick, so settle the bubble again before returning.
-	synctest.Wait()
 }
 
 // inBubble reports whether the calling goroutine is in a testing/synctest

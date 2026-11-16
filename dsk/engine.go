@@ -74,6 +74,11 @@ type engine struct {
 	handlerEntries   []handlerEntry                      // AddEventHandler registrations with their label selectors
 	pendingCalls     int64                               // accessed atomically; credited per expected handler call, debited on completion
 	nextEventID      uint64                              // accessed atomically; monotonically increasing IDs for buffered events
+
+	// afterCloseWindow, if set, runs in flush after every queue's window has
+	// closed and before flush waits for the queues. Tests use it to schedule a
+	// worker's Get at that point.
+	afterCloseWindow func()
 }
 
 func newEngine() *engine {
@@ -555,6 +560,9 @@ func (e *engine) flush(ctx context.Context, events []pendingEvent) error {
 	for _, q := range queues {
 		q.closeWindow()
 	}
+	if e.afterCloseWindow != nil {
+		e.afterCloseWindow()
+	}
 
 	// Wait for all queues to finish their tick.
 	for _, q := range queues {
@@ -567,16 +575,14 @@ func (e *engine) flush(ctx context.Context, events []pendingEvent) error {
 	return nil
 }
 
-// waitForQueuesIdle waits until all registered queue wrappers report idle
-// (Len()==0 and inFlight=={}), or ctx is cancelled. It skips queues that had
-// no activity during the last tick (active==false) to avoid hanging when items
-// pre-existed in the queue before the tick and were never Get'd.
+// waitForQueuesIdle waits until no registered queue wrapper owes work, or ctx
+// is cancelled. It skips a queue with no worker draining it and no Add or Get
+// during the last tick's window, to avoid hanging on items that are never
+// dequeued. See wrappedQueue.waitForIdle.
 //
-// Called by TickUntilSteady after each Tick() and before IsSteady() so that
-// items requeued within a tick (via Add by handlers or via AddAfter/Done dirty
-// path) are drained before the steady-state check. Not called from flush()
-// directly, which allows tests that drain the queue manually after Tick() to
-// proceed without blocking.
+// Called by TickUntilSteady and Advance after each tick and before IsSteady.
+// Not called from flush() directly, which allows tests that drain the queue
+// manually after Tick() to proceed without blocking.
 func (e *engine) waitForQueuesIdle(ctx context.Context) error {
 	e.mu.Lock()
 	queues := make([]tickableQueue, len(e.queues))
@@ -592,10 +598,10 @@ func (e *engine) waitForQueuesIdle(ctx context.Context) error {
 
 // isSteady acquires engine.mu then calls q.isIdle() per the lock ordering above.
 //
-// Note: Tick/Flush only waits for in-flight items (Get→Done) to complete, not
-// for Len() to reach zero. IsSteady() is the authoritative check for full
-// quiescence — it verifies both the buffer is empty AND all queues are idle
-// (no in-flight items AND Len() == 0).
+// Note: Tick/Flush waits only for the reconciles of the tick (see
+// wrappedQueue.checkDoneLocked), not for every queued item. IsSteady() is the
+// authoritative check for full quiescence: the buffer is empty AND no queue
+// owes work.
 func (e *engine) isSteady() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()

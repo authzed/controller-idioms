@@ -4,6 +4,7 @@ package dsk
 
 import (
 	"testing"
+	"time"
 
 	"k8s.io/client-go/util/workqueue"
 )
@@ -128,5 +129,89 @@ func TestWrappedQueue_IsIdle(t *testing.T) {
 	wq.Done(item)
 	if !wq.isIdle() {
 		t.Fatal("expected idle queue after Done")
+	}
+}
+
+// An item added again while it is processing is owed a second reconcile.
+func TestWrappedQueue_ReAddWhileProcessingIsOwed(t *testing.T) {
+	wq := newWrappedQueue(workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[any]()))
+	defer wq.ShutDown()
+
+	wq.Add("key1")
+	item, _ := wq.Get()
+	wq.Add("key1")
+	wq.Done(item)
+	if wq.isIdle() {
+		t.Fatal("expected non-idle: key1 was re-added while processing")
+	}
+	item, _ = wq.Get()
+	if wq.isIdle() {
+		t.Fatal("expected non-idle during the second reconcile")
+	}
+	wq.Done(item)
+	if !wq.isIdle() {
+		t.Fatal("expected idle after the second reconcile")
+	}
+}
+
+// With a worker draining the queue, the tick stays open for the second
+// reconcile of an item re-added while processing.
+func TestWrappedQueue_TickWaitsForReAddWhileProcessing(t *testing.T) {
+	wq := newWrappedQueue(workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[any]()))
+	defer wq.ShutDown()
+
+	wq.beginTick()
+	wq.Add("key1")
+	item, _ := wq.Get()
+	wq.Add("key1")
+	wq.closeWindow()
+	wq.Done(item)
+	select {
+	case <-wq.doneCh():
+		t.Fatal("expected tick open: key1 is queued and a worker is draining the queue")
+	default:
+	}
+	item, _ = wq.Get()
+	wq.Done(item)
+	select {
+	case <-wq.doneCh():
+	default:
+		t.Fatal("expected tick complete after the second reconcile")
+	}
+}
+
+// AddAfter with a non-positive duration is an Add.
+func TestWrappedQueue_AddAfterZeroIsOwed(t *testing.T) {
+	wq := newWrappedQueue(workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[any]()))
+	defer wq.ShutDown()
+
+	wq.beginTick()
+	wq.AddAfter("key1", 0)
+	wq.mu.Lock()
+	_, queued := wq.queued["key1"]
+	active := wq.active
+	wq.mu.Unlock()
+	if !queued || !active {
+		t.Fatalf("expected AddAfter(0) recorded as an Add: queued=%v active=%v", queued, active)
+	}
+	item, _ := wq.Get()
+	wq.Done(item)
+	if !wq.isIdle() {
+		t.Fatal("expected idle after Done")
+	}
+}
+
+// The underlying queue drops Adds after ShutDown, so the ledger does too.
+func TestWrappedQueue_AddAfterShutDownIsNotOwed(t *testing.T) {
+	wq := newWrappedQueue(workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[any]()))
+	wq.Add("key1")
+	wq.ShutDown()
+	wq.Add("key2")
+	wq.AddAfter("key3", time.Hour)
+	if !wq.isIdle() {
+		t.Fatal("expected idle: a shut-down queue owes no work")
+	}
+	if wq.pendingRequeues().pending {
+		t.Fatal("expected no pending requeues after ShutDown")
 	}
 }

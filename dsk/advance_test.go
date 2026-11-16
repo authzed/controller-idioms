@@ -76,10 +76,6 @@ func TestAdvance_ReconcilesAfterRequeueDelay(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.TickUntilSteady(5)
-		// A worker whose Get lands after the tick window closes is not tracked,
-		// so TickUntilSteady can return before the reconcile finishes. Settle
-		// the bubble before counting. (Advance does this itself.)
-		synctest.Wait()
 
 		if got := reconciles.Load(); got != 1 {
 			t.Fatalf("reconciles after first tick: got %d, want 1", got)

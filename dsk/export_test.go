@@ -40,6 +40,10 @@ var (
 	ObjectNameFromPath = objectNameFromPath
 )
 
+// ExportAfterCloseWindow sets a hook that runs in every flush after the queue
+// windows close and before flush waits for the queues.
+func ExportAfterCloseWindow(d *DSK, f func()) { d.engine.afterCloseWindow = f }
+
 func ExportHandlerEntryCount(e *engine) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()

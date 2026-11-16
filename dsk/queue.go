@@ -78,6 +78,20 @@ func (r *requeueTracker[T]) got(item T) {
 	delete(r.rateLimited, item)
 }
 
+// due reports whether an AddAfter deadline has passed for an item that has not
+// been dequeued since. The delaying queue moves such an item into the queue
+// with its own Add, which the wrapper does not see, so the item is owed work
+// from its deadline until a Get resolves it.
+func (r *requeueTracker[T]) due() bool {
+	now := time.Now()
+	for _, deadline := range r.after {
+		if !now.Before(deadline) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *requeueTracker[T]) clear() {
 	clear(r.after)
 	clear(r.rateLimited)
@@ -97,37 +111,68 @@ func (r *requeueTracker[T]) status() requeueStatus {
 // with DSK's tick engine. It implements both TypedRateLimitingInterface[T] and
 // tickableQueue. WrapQueue uses wrappedQueue[any]: client-go defines
 // RateLimitingInterface as TypedRateLimitingInterface[any].
+//
+// The wrapper keeps a ledger of the work each item is owed, from Add to Done,
+// that mirrors the workqueue's own dirty and processing sets:
+//
+//   - Add puts an item in queued, or in dirty if it is processing.
+//   - Get moves it from queued to processing.
+//   - Done removes it from processing, and moves it back to queued if it is
+//     dirty: the workqueue hands a dirty item out again after Done.
+//
+// The ledger is updated before the underlying Add and Done and after the
+// underlying Get, so it never shows an item as settled while the workqueue
+// still owes it work.
+//
+// Lock ordering: w.mu → workqueue lock (via Len). The wrapper never holds
+// w.mu while it calls Add, Get or Done on the underlying queue.
 type wrappedQueue[T comparable] struct {
 	workqueue.TypedRateLimitingInterface[T]
 
-	mu         sync.Mutex
-	idleCond   *sync.Cond
-	inFlight   map[T]struct{} // keys between Get and Done dequeued during an open window
-	active     bool           // true if Add() or Get() was called during this tick window
-	windowOpen bool
-	done       chan struct{} // closed when tick is complete; reset each tick
-	requeues   requeueTracker[T]
+	mu       sync.Mutex
+	idleCond *sync.Cond
+	requeues requeueTracker[T]
+
+	// The ledger.
+	queued     map[T]struct{} // added and not yet dequeued
+	processing map[T]struct{} // dequeued and not yet Done
+	dirty      map[T]struct{} // added again while processing
+	parked     int            // goroutines inside the underlying Get
+	shutDown   bool           // the underlying queue drops Adds after ShutDown
+
+	// Tick state, reset by beginTick.
+	inFlight    map[T]struct{} // dequeued during this tick and not yet Done
+	active      bool           // Add or Get was called while the window was open
+	gotThisTick bool           // Get returned an item during this tick
+	windowOpen  bool
+	tickOver    bool          // done is closed
+	done        chan struct{} // closed when the tick is complete
 }
 
 func newWrappedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T]) *wrappedQueue[T] {
 	w := &wrappedQueue[T]{
 		TypedRateLimitingInterface: q,
+		requeues:                   newRequeueTracker[T](),
+		queued:                     make(map[T]struct{}),
+		processing:                 make(map[T]struct{}),
+		dirty:                      make(map[T]struct{}),
 		inFlight:                   make(map[T]struct{}),
 		done:                       make(chan struct{}),
-		requeues:                   newRequeueTracker[T](),
 	}
 	w.idleCond = sync.NewCond(&w.mu)
 	return w
 }
 
-// beginTick opens the Get() tracking window and resets tick state.
+// beginTick opens the tick window and resets tick state.
 // Called at the start of each Flush.
 func (w *wrappedQueue[T]) beginTick() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.inFlight = make(map[T]struct{})
 	w.active = false
+	w.gotThisTick = false
 	w.windowOpen = true
+	w.tickOver = false
 	w.done = make(chan struct{})
 }
 
@@ -148,64 +193,117 @@ func (w *wrappedQueue[T]) doneCh() <-chan struct{} {
 	return w.done
 }
 
-// isIdle returns true when there are no keys in flight and no keys pending
-// in the underlying queue. This catches items that have been requeued via
-// AddRateLimited/AddAfter and have cleared the rate limiter but not yet
-// been dequeued by a worker goroutine.
+// workerSeenLocked reports whether a goroutine is draining this queue: one is
+// parked in Get, holds an item, or took one during this tick. A test that
+// drains the queue by hand after Tick returns has no such goroutine.
+func (w *wrappedQueue[T]) workerSeenLocked() bool {
+	return w.parked > 0 || len(w.processing) > 0 || w.gotThisTick
+}
+
+// busyLocked reports whether the queue owes any work: an item is queued or
+// processing in the ledger, an AddAfter deadline has passed for an item not
+// yet dequeued, or the underlying queue holds an item. Len catches items the
+// ledger cannot see: rate-limited requeues that have left the delay heap, and
+// items added to the underlying queue before it was wrapped.
 //
-// Items still in the delay heap (AddRateLimited, or AddAfter with d > 0) are
-// not visible to Len() and are not counted here; requeueTracker reports them
-// separately via pendingRequeues.
+// After ShutDown the queue owes only the reconciles already processing:
+// workers stop dequeuing, so items left in the queue would never drain.
+//
+// One case remains uncovered: a rate-limited requeue between the underlying
+// Get returning it and the wrapper recording it. DSK cannot see its deadline.
+func (w *wrappedQueue[T]) busyLocked() bool {
+	if len(w.processing) > 0 {
+		return true
+	}
+	if w.shutDown {
+		return false
+	}
+	return len(w.queued) > 0 ||
+		w.requeues.due() ||
+		w.Len() > 0
+}
+
+// isIdle reports whether the queue owes no work. Items still in the delay heap
+// (AddRateLimited, or AddAfter with d > 0 before its deadline) do not count;
+// pendingRequeues reports them.
 func (w *wrappedQueue[T]) isIdle() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return len(w.inFlight) == 0 && w.TypedRateLimitingInterface.Len() == 0
+	return !w.busyLocked()
 }
 
-// Add intercepts item enqueuing. Items added during an open window mark this
-// tick as active so waitForIdle knows to wait for them to be processed.
-func (w *wrappedQueue[T]) Add(item T) {
-	w.TypedRateLimitingInterface.Add(item)
-	w.mu.Lock()
+// addLocked records that item is owed work. Must be called before the
+// underlying Add, so a Get that races with it finds the item in queued.
+func (w *wrappedQueue[T]) addLocked(item T) {
+	if w.shutDown {
+		return
+	}
+	if _, ok := w.processing[item]; ok {
+		w.dirty[item] = struct{}{}
+	} else {
+		w.queued[item] = struct{}{}
+	}
 	if w.windowOpen {
 		w.active = true
 	}
-	w.idleCond.Broadcast()
-	w.mu.Unlock()
 }
 
-// AddRateLimited is a controller-triggered requeue. Not counted as this tick's
-// work, but recorded as a pending requeue until the item is next dequeued.
+// Add records the item in the ledger, then enqueues it.
+func (w *wrappedQueue[T]) Add(item T) {
+	w.mu.Lock()
+	w.addLocked(item)
+	w.mu.Unlock()
+	w.TypedRateLimitingInterface.Add(item)
+}
+
+// AddRateLimited is a controller-triggered requeue. Not counted as owed work,
+// but recorded as a pending requeue until the item is next dequeued.
 func (w *wrappedQueue[T]) AddRateLimited(item T) {
 	w.mu.Lock()
-	w.requeues.addRateLimited(item)
+	if !w.shutDown {
+		w.requeues.addRateLimited(item)
+	}
 	w.mu.Unlock()
 	w.TypedRateLimitingInterface.AddRateLimited(item)
 }
 
-// AddAfter is a controller-triggered requeue. Not counted as this tick's work,
-// but a positive duration is recorded as a pending requeue with its deadline.
+// AddAfter is a controller-triggered requeue. A positive duration is recorded
+// as a pending requeue with its deadline, and counts as owed work once the
+// deadline passes. The delaying queue adds a non-positive duration at once,
+// so that is recorded as an Add.
 func (w *wrappedQueue[T]) AddAfter(item T, duration time.Duration) {
 	w.mu.Lock()
-	w.requeues.addAfter(item, duration)
+	if duration <= 0 {
+		w.addLocked(item)
+	} else if !w.shutDown {
+		w.requeues.addAfter(item, duration)
+	}
 	w.mu.Unlock()
 	w.TypedRateLimitingInterface.AddAfter(item, duration)
 }
 
-// ShutDown clears pending requeues: the delaying queue drops them on shutdown.
+// ShutDown shuts the underlying queue down and drops the work it will no longer
+// hand out. Items already processing stay in the ledger until Done.
 func (w *wrappedQueue[T]) ShutDown() {
 	w.TypedRateLimitingInterface.ShutDown()
-	w.mu.Lock()
-	w.requeues.clear()
-	w.mu.Unlock()
+	w.shutDownLedger()
 }
 
-// ShutDownWithDrain clears pending requeues: the delaying queue drops them on shutdown.
+// ShutDownWithDrain is like ShutDown, but blocks until processing items are Done.
 func (w *wrappedQueue[T]) ShutDownWithDrain() {
 	w.TypedRateLimitingInterface.ShutDownWithDrain()
+	w.shutDownLedger()
+}
+
+func (w *wrappedQueue[T]) shutDownLedger() {
 	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.shutDown = true
 	w.requeues.clear()
-	w.mu.Unlock()
+	clear(w.queued)
+	clear(w.dirty)
+	w.checkDoneLocked()
+	w.idleCond.Broadcast()
 }
 
 func (w *wrappedQueue[T]) pendingRequeues() requeueStatus {
@@ -214,44 +312,59 @@ func (w *wrappedQueue[T]) pendingRequeues() requeueStatus {
 	return w.requeues.status()
 }
 
-// Get intercepts key dequeuing. Keys dequeued during an open window are tracked as in-flight.
+// Get dequeues an item and records it as processing. While the caller is
+// parked in the underlying Get, the tick does not complete with work queued.
 func (w *wrappedQueue[T]) Get() (T, bool) {
+	w.mu.Lock()
+	w.parked++
+	w.mu.Unlock()
+
 	item, shutdown := w.TypedRateLimitingInterface.Get()
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.parked--
 	if !shutdown {
-		w.mu.Lock()
+		delete(w.queued, item)
+		w.processing[item] = struct{}{}
 		w.requeues.got(item)
+		w.gotThisTick = true
 		if w.windowOpen {
-			w.inFlight[item] = struct{}{}
 			w.active = true
 		}
-		// Broadcast so waitForIdle can re-check Len() now that an item was dequeued.
-		w.idleCond.Broadcast()
-		w.mu.Unlock()
+		if !w.tickOver {
+			w.inFlight[item] = struct{}{}
+		}
 	}
+	w.checkDoneLocked()
+	w.idleCond.Broadcast()
 	return item, shutdown
 }
 
-// Done intercepts reconcile completion. Removes the key from in-flight tracking
-// and checks whether the tick is now complete.
+// Done records the end of a reconcile, then tells the underlying queue. A
+// dirty item goes back to queued: the workqueue hands it out again.
 func (w *wrappedQueue[T]) Done(item T) {
-	w.TypedRateLimitingInterface.Done(item)
 	w.mu.Lock()
-	defer w.mu.Unlock()
+	delete(w.processing, item)
 	delete(w.inFlight, item)
+	if _, ok := w.dirty[item]; ok {
+		delete(w.dirty, item)
+		w.queued[item] = struct{}{}
+	}
 	w.checkDoneLocked()
 	w.idleCond.Broadcast()
+	w.mu.Unlock()
+	w.TypedRateLimitingInterface.Done(item)
 }
 
-// waitForIdle blocks until len(inFlight)==0 and Len()==0, or ctx is cancelled.
-// It only waits if the tick was active: i.e., Add() or Get() was called during
-// the tick window. Items that were already in the queue before the tick started
-// and were never touched do not trigger waiting. This ensures TickUntilSteady
-// correctly exhausts its tick budget for controllers that never drain their queue.
+// waitForIdle blocks until the queue owes no work (see busyLocked), or ctx is
+// cancelled. It waits only if Add or Get was called while this tick's window
+// was open, or a worker is draining the queue. A queue whose items are never
+// dequeued does not block, so TickUntilSteady still exhausts its tick budget
+// for a controller that never drains its queue.
 //
-// Called by engine.flush after waitForHandlersIdle and before closeWindow so
-// that items requeued inside a tick (via Add by handlers, or via AddAfter/Done
-// dirty path) are drained within the same tick window rather than leaking into
-// IsSteady checks after the tick returns.
+// Called by TickUntilSteady and Advance after each tick, not by Flush, so a
+// test can drain a queue by hand after Tick returns.
 func (w *wrappedQueue[T]) waitForIdle(ctx context.Context) error {
 	stopCh := make(chan struct{})
 	go func() {
@@ -265,10 +378,10 @@ func (w *wrappedQueue[T]) waitForIdle(ctx context.Context) error {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if !w.active {
+	if !w.active && !w.workerSeenLocked() {
 		return ctx.Err()
 	}
-	for len(w.inFlight) > 0 || w.TypedRateLimitingInterface.Len() > 0 {
+	for w.busyLocked() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -277,23 +390,23 @@ func (w *wrappedQueue[T]) waitForIdle(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// checkDoneLocked closes the done channel if the tick is complete:
-// window closed and nothing in flight. The tick is considered complete once
-// all items that were dequeued (Get) during the open window have been
-// finished (Done). Items sitting in the queue but never dequeued do not
-// block tick completion — use IsSteady() to detect a fully quiescent state.
+// checkDoneLocked closes the done channel once the tick is complete: the
+// window is closed, every item dequeued during the tick is Done, and no
+// queued item is waiting for a worker that is draining the queue. A worker
+// whose Get lands after the window closes is still counted, because the tick
+// stays open while it is parked with work queued.
 //
-// Lock ordering: w.mu is the only lock acquired here. engine.mu is
-// released before any wrappedQueue method is called, so no inversion.
+// Items queued with no worker draining the queue do not block the tick, so a
+// test can drain by hand after Tick returns. IsSteady reports them.
 //
 // Must be called with w.mu held.
 func (w *wrappedQueue[T]) checkDoneLocked() {
-	if !w.windowOpen && len(w.inFlight) == 0 {
-		select {
-		case <-w.done:
-			// already closed
-		default:
-			close(w.done)
-		}
+	if w.tickOver || w.windowOpen || len(w.inFlight) > 0 {
+		return
 	}
+	if len(w.queued) > 0 && w.workerSeenLocked() {
+		return
+	}
+	w.tickOver = true
+	close(w.done)
 }
