@@ -4,6 +4,7 @@ package dsk
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"k8s.io/client-go/util/workqueue"
@@ -199,6 +200,79 @@ func TestWrappedQueue_AddAfterZeroIsOwed(t *testing.T) {
 	if !wq.isIdle() {
 		t.Fatal("expected idle after Done")
 	}
+}
+
+// Between the underlying Get returning a rate-limited requeue and the tracker
+// recording it, a wrapped queue cannot see the item: this is the gap that
+// NewRateLimitingQueue closes.
+func TestQueue_RateLimitedRequeueBetweenGetAndRecord(t *testing.T) {
+	cases := map[string]struct {
+		build    func() (workqueue.TypedRateLimitingInterface[string], *queueTracker[string])
+		wantIdle bool
+	}{
+		"wrapped": {
+			build: func() (workqueue.TypedRateLimitingInterface[string], *queueTracker[string]) {
+				wq := newWrappedQueue(workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()))
+				return wq, wq.queueTracker
+			},
+			wantIdle: true,
+		},
+		"built": {
+			build: func() (workqueue.TypedRateLimitingInterface[string], *queueTracker[string]) {
+				return newRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string](), workqueue.TypedRateLimitingQueueConfig[string]{}, nil)
+			},
+			wantIdle: false,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				q, tr := tc.build()
+				defer q.ShutDown()
+
+				q.AddRateLimited("a")
+				time.Sleep(time.Second) // past the limiter's first delay
+				if tr.isIdle() {
+					t.Fatal("expected non-idle: the requeue is in the queue")
+				}
+				var idle bool
+				tr.afterGet = func() { idle = tr.isIdle() }
+				item, _ := q.Get()
+				if idle != tc.wantIdle {
+					t.Fatalf("isIdle between Get and record: got %v, want %v", idle, tc.wantIdle)
+				}
+				q.Done(item)
+				if !tr.isIdle() {
+					t.Fatal("expected idle after Done")
+				}
+			})
+		})
+	}
+}
+
+// A queue built by NewRateLimitingQueue knows each AddRateLimited deadline.
+func TestBuiltQueue_RateLimitedRequeueHasDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q, tr := newRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string](), workqueue.TypedRateLimitingQueueConfig[string]{}, nil)
+		defer q.ShutDown()
+
+		q.AddRateLimited("a")
+		s := tr.pendingRequeues()
+		// The default controller rate limiter's first delay is 5ms.
+		if !s.pending || !s.hasNext || time.Until(s.next) != 5*time.Millisecond {
+			t.Fatalf("got %+v, want a pending requeue due in 5ms", s)
+		}
+		time.Sleep(5 * time.Millisecond)
+		synctest.Wait()
+		if tr.isIdle() {
+			t.Fatal("expected non-idle: the requeue came due")
+		}
+		item, _ := q.Get()
+		q.Done(item)
+		if !tr.isIdle() || tr.pendingRequeues().pending {
+			t.Fatal("expected idle with no pending requeues")
+		}
+	})
 }
 
 // The underlying queue drops Adds after ShutDown, so the ledger does too.

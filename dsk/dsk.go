@@ -160,22 +160,51 @@ func (d *DSK) TypedFromConfig(cfg *rest.Config) (kubernetes.Interface, error) {
 	return kubernetes.NewForConfig(cfgCopy)
 }
 
+// NewRateLimitingQueue builds a rate-limiting work queue that DSK tracks
+// exactly. It is the DSK counterpart of
+// workqueue.NewTypedRateLimitingQueueWithConfig. Prefer it to WrapTypedQueue
+// when the controller's queue can be built by the test.
+//
+// DSK builds the base queue, the delaying queue and the rate-limiting queue
+// itself, so it sees every item enter the queue, including requeues that come
+// due, and the delay of each AddRateLimited. A wrapped queue misses both.
+//
+// cfg.DelayingQueue and cfg.Clock must be nil: DSK builds the delaying queue,
+// and its requeue deadlines use the time package clock (the bubble's clock
+// inside a testing/synctest bubble). Register all controller queues before
+// calling Tick or Flush.
+func (d *DSK) NewRateLimitingQueue[T comparable](rl workqueue.TypedRateLimiter[T], cfg workqueue.TypedRateLimitingQueueConfig[T], opts ...QueueOption) workqueue.TypedRateLimitingInterface[T] {
+	d.helper()
+	if cfg.DelayingQueue != nil || cfg.Clock != nil {
+		d.tb.Fatal("dsk: NewRateLimitingQueue requires cfg.DelayingQueue and cfg.Clock to be nil")
+		return nil
+	}
+	q, t := newRateLimitingQueue(rl, cfg, opts)
+	d.engine.registerQueue(t)
+	return q
+}
+
 // WrapQueue wraps a work queue for cooperative tick completion.
 // The returned queue is a drop-in replacement for the original.
 // Register all controller queues before calling Tick or Flush.
-func (d *DSK) WrapQueue(q workqueue.RateLimitingInterface) workqueue.RateLimitingInterface {
-	wq := newWrappedQueue[any](q)
-	d.engine.registerQueue(wq)
+//
+// A wrapped queue cannot see the delay of an AddRateLimited requeue, or the
+// moment that requeue enters the queue. Use NewRateLimitingQueue where the
+// test can build the queue.
+func (d *DSK) WrapQueue(q workqueue.RateLimitingInterface, opts ...QueueOption) workqueue.RateLimitingInterface {
+	wq := newWrappedQueue[any](q, opts...)
+	d.engine.registerQueue(wq.queueTracker)
 	return wq
 }
 
 // WrapTypedQueue wraps a generic typed work queue for cooperative tick completion.
 // Use this instead of WrapQueue when the controller uses
 // workqueue.TypedRateLimitingInterface[T] directly (e.g. TypedRateLimitingInterface[string]).
-// The returned queue is a drop-in replacement for the original.
-func (d *DSK) WrapTypedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T]) workqueue.TypedRateLimitingInterface[T] {
-	wq := newWrappedQueue(q)
-	d.engine.registerQueue(wq)
+// The returned queue is a drop-in replacement for the original. The limits
+// of WrapQueue apply.
+func (d *DSK) WrapTypedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T], opts ...QueueOption) workqueue.TypedRateLimitingInterface[T] {
+	wq := newWrappedQueue(q, opts...)
+	d.engine.registerQueue(wq.queueTracker)
 	return wq
 }
 
@@ -213,11 +242,12 @@ func (d *DSK) Buffer() []PendingEvent {
 // Flush delivers the given events to their watch streams and waits for all
 // triggered reconciles to complete before returning.
 //
-// Flush waits for a queued item only while a worker is draining that queue:
-// one is parked in Get, holds an item, or took one during this Flush. With no
-// worker, Flush returns with the items still queued, so a test can drain the
-// queue by hand. A worker that has not yet reached its first Get when the
-// handlers finish is not seen; TickUntilSteady still waits for its reconcile.
+// Flush waits for a queued item only while a worker drains that queue: the
+// queue was registered with Drained, or a goroutine is parked in Get, holds an
+// item, or took one during this Flush. With no worker, Flush returns with the
+// items still queued, so a test can drain the queue by hand. Without Drained,
+// a worker that has not yet reached its first Get when the handlers finish is
+// not seen; TickUntilSteady still waits for its reconcile.
 //
 // events must be values returned by a prior call to Buffer(). Do not modify
 // the Event.Object field of returned PendingEvent values — removal matching
@@ -319,28 +349,32 @@ func (d *DSK) IsSteady() bool {
 	return d.engine.isSteady()
 }
 
-// HasPendingRequeues reports whether any wrapped queue holds a delayed requeue
-// that has not yet been dequeued: an AddAfter with a positive duration, or an
-// AddRateLimited. Together with IsSteady it separates "steady" (IsSteady and
-// !HasPendingRequeues) from "steady until a requeue fires" (IsSteady and
-// HasPendingRequeues).
+// HasPendingRequeues reports whether any registered queue holds a delayed
+// requeue that has not yet been dequeued: an AddAfter with a positive
+// duration, or an AddRateLimited. Together with IsSteady it separates "steady"
+// (IsSteady and !HasPendingRequeues) from "steady until a requeue fires"
+// (IsSteady and HasPendingRequeues).
 //
-// An AddAfter requeue is pending until its item is dequeued at or after its
-// deadline. An AddRateLimited requeue is pending until its item is next
-// dequeued, because DSK cannot see the delay that the rate limiter picks.
-// ShutDown clears all pending requeues for that queue.
+// A requeue with a known deadline is pending until its item is dequeued at or
+// after that deadline. AddAfter always has one; AddRateLimited has one on a
+// queue built by NewRateLimitingQueue. On a wrapped queue, an AddRateLimited
+// requeue is pending until its item is next dequeued, because DSK cannot see
+// the delay that the rate limiter picks. ShutDown clears all pending requeues
+// for that queue.
 func (d *DSK) HasPendingRequeues() bool {
 	return d.engine.pendingRequeues().pending
 }
 
 // NextRequeue returns the time until the earliest pending AddAfter requeue
 // fires, measured on the current clock (the bubble's clock inside a
-// testing/synctest bubble). ok is false when no AddAfter requeue is pending.
+// testing/synctest bubble). ok is false when no requeue with a known
+// deadline is pending.
 // The duration is zero if the deadline has already passed.
 //
-// AddRateLimited requeues have no deadline that DSK can see, so they are not
-// counted here. If HasPendingRequeues is true but NextRequeue returns false,
-// call Advance with a duration that covers the rate limiter's delay.
+// AddRateLimited requeues on a wrapped queue have no deadline that DSK can
+// see, so they are not counted here; use NewRateLimitingQueue to count them.
+// If HasPendingRequeues is true but NextRequeue returns false, call Advance
+// with a duration that covers the rate limiter's delay.
 //
 // Pair it with Advance to move exactly to the next requeue:
 //

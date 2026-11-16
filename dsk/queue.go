@@ -11,7 +11,7 @@ import (
 )
 
 // tickableQueue is the internal interface the engine uses to coordinate ticks
-// across registered queue wrappers.
+// across registered queues. queueTracker implements it.
 type tickableQueue interface {
 	beginTick()
 	closeWindow()
@@ -37,13 +37,13 @@ func (s requeueStatus) merge(o requeueStatus) requeueStatus {
 }
 
 // requeueTracker records delayed requeues that sit in the delaying queue's
-// heap, where Len() cannot see them. It is guarded by the owning wrapper's mu.
+// heap, where Len() cannot see them. It is guarded by the owning tracker's mu.
 type requeueTracker[T comparable] struct {
-	// after holds the AddAfter deadline per item. The delaying queue keeps only
+	// after holds the requeue deadline per item. The delaying queue keeps only
 	// the earliest deadline for an item that is already waiting, so this does too.
 	after map[T]time.Time
-	// rateLimited holds AddRateLimited items. Their delay comes from the
-	// underlying rate limiter, which DSK cannot see, so they have no deadline.
+	// rateLimited holds AddRateLimited items whose delay DSK cannot see: the
+	// rate limiter of a queue passed to WrapQueue or WrapTypedQueue.
 	rateLimited map[T]struct{}
 }
 
@@ -78,10 +78,10 @@ func (r *requeueTracker[T]) got(item T) {
 	delete(r.rateLimited, item)
 }
 
-// due reports whether an AddAfter deadline has passed for an item that has not
+// due reports whether a requeue deadline has passed for an item that has not
 // been dequeued since. The delaying queue moves such an item into the queue
-// with its own Add, which the wrapper does not see, so the item is owed work
-// from its deadline until a Get resolves it.
+// with its own Add, which a wrapper around the finished queue does not see,
+// so the item is owed work from its deadline until a Get resolves it.
 func (r *requeueTracker[T]) due() bool {
 	now := time.Now()
 	for _, deadline := range r.after {
@@ -107,27 +107,57 @@ func (r *requeueTracker[T]) status() requeueStatus {
 	return s
 }
 
-// wrappedQueue wraps a workqueue.TypedRateLimitingInterface[T] to cooperate
-// with DSK's tick engine. It implements both TypedRateLimitingInterface[T] and
-// tickableQueue. WrapQueue uses wrappedQueue[any]: client-go defines
-// RateLimitingInterface as TypedRateLimitingInterface[any].
+// QueueOption configures a queue registered with DSK.
+type QueueOption func(*queueOptions)
+
+type queueOptions struct {
+	drained bool
+}
+
+// Drained declares that worker goroutines drain the queue. Tick, Flush,
+// TickUntilSteady and Advance then wait for every queued item to be
+// reconciled, even when a worker has not yet reached its first Get.
 //
-// The wrapper keeps a ledger of the work each item is owed, from Add to Done,
-// that mirrors the workqueue's own dirty and processing sets:
+// Without Drained, DSK infers a worker from a goroutine parked in Get, holding
+// an item, or taking one during the tick. That inference misses a worker that
+// starts late, and it is what lets a test drain a queue by hand after Tick. Do
+// not use Drained on a queue that the test drains by hand: Tick would wait for
+// a worker that never comes.
+func Drained() QueueOption {
+	return func(o *queueOptions) { o.drained = true }
+}
+
+// queueTracker keeps the ledger and tick state for one queue. The engine
+// registers it as a tickableQueue, and the queue wrappers feed it.
+//
+// The ledger records the work each item is owed, from Add to Done, and mirrors
+// the workqueue's own dirty and processing sets:
 //
 //   - Add puts an item in queued, or in dirty if it is processing.
 //   - Get moves it from queued to processing.
 //   - Done removes it from processing, and moves it back to queued if it is
 //     dirty: the workqueue hands a dirty item out again after Done.
 //
-// The ledger is updated before the underlying Add and Done and after the
-// underlying Get, so it never shows an item as settled while the workqueue
+// The wrappers update the ledger before the underlying Add and Done and after
+// the underlying Get, so it never shows an item as settled while the workqueue
 // still owes it work.
 //
-// Lock ordering: w.mu → workqueue lock (via Len). The wrapper never holds
-// w.mu while it calls Add, Get or Done on the underlying queue.
-type wrappedQueue[T comparable] struct {
-	workqueue.TypedRateLimitingInterface[T]
+// A tracker fed by a base queue (NewRateLimitingQueue) is exact: every Add
+// passes through it, including the delaying queue's Add of a requeue that has
+// come due. A tracker fed by a wrapper around a finished queue (WrapQueue,
+// WrapTypedQueue) misses those Adds and falls back on requeue deadlines and
+// Len; see busyLocked.
+//
+// Lock ordering: mu → workqueue lock (via len). The wrappers never hold mu
+// while they call Add, Get or Done on the underlying queue.
+type queueTracker[T comparable] struct {
+	exact   bool
+	drained bool
+	len     func() int // the underlying queue's Len; unused when exact
+
+	// afterGet, if set, runs after the underlying Get returns and before the
+	// ledger records the item. Tests use it to inspect that moment.
+	afterGet func()
 
 	mu       sync.Mutex
 	idleCond *sync.Cond
@@ -149,264 +179,402 @@ type wrappedQueue[T comparable] struct {
 	done        chan struct{} // closed when the tick is complete
 }
 
-func newWrappedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T]) *wrappedQueue[T] {
-	w := &wrappedQueue[T]{
-		TypedRateLimitingInterface: q,
-		requeues:                   newRequeueTracker[T](),
-		queued:                     make(map[T]struct{}),
-		processing:                 make(map[T]struct{}),
-		dirty:                      make(map[T]struct{}),
-		inFlight:                   make(map[T]struct{}),
-		done:                       make(chan struct{}),
+func newQueueTracker[T comparable](exact bool, length func() int, opts []QueueOption) *queueTracker[T] {
+	var o queueOptions
+	for _, opt := range opts {
+		opt(&o)
 	}
-	w.idleCond = sync.NewCond(&w.mu)
-	return w
+	t := &queueTracker[T]{
+		exact:      exact,
+		drained:    o.drained,
+		len:        length,
+		requeues:   newRequeueTracker[T](),
+		queued:     make(map[T]struct{}),
+		processing: make(map[T]struct{}),
+		dirty:      make(map[T]struct{}),
+		inFlight:   make(map[T]struct{}),
+		done:       make(chan struct{}),
+	}
+	t.idleCond = sync.NewCond(&t.mu)
+	return t
 }
 
 // beginTick opens the tick window and resets tick state.
 // Called at the start of each Flush.
-func (w *wrappedQueue[T]) beginTick() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.inFlight = make(map[T]struct{})
-	w.active = false
-	w.gotThisTick = false
-	w.windowOpen = true
-	w.tickOver = false
-	w.done = make(chan struct{})
+func (t *queueTracker[T]) beginTick() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.inFlight = make(map[T]struct{})
+	t.active = false
+	t.gotThisTick = false
+	t.windowOpen = true
+	t.tickOver = false
+	t.done = make(chan struct{})
 }
 
 // closeWindow closes the tick window and checks for completion.
 // Called after events are flushed and handlers have returned.
-func (w *wrappedQueue[T]) closeWindow() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.windowOpen = false
-	w.checkDoneLocked()
+func (t *queueTracker[T]) closeWindow() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.windowOpen = false
+	t.checkDoneLocked()
 }
 
 // doneCh returns the current tick's completion channel.
 // Callers must not invoke beginTick concurrently while waiting on the returned channel.
-func (w *wrappedQueue[T]) doneCh() <-chan struct{} {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.done
+func (t *queueTracker[T]) doneCh() <-chan struct{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.done
 }
 
-// workerSeenLocked reports whether a goroutine is draining this queue: one is
-// parked in Get, holds an item, or took one during this tick. A test that
-// drains the queue by hand after Tick returns has no such goroutine.
-func (w *wrappedQueue[T]) workerSeenLocked() bool {
-	return w.parked > 0 || len(w.processing) > 0 || w.gotThisTick
+// workerSeenLocked reports whether a goroutine drains this queue: the queue is
+// declared Drained, or a goroutine is parked in Get, holds an item, or took
+// one during this tick. A test that drains the queue by hand after Tick
+// returns has no such goroutine.
+func (t *queueTracker[T]) workerSeenLocked() bool {
+	return (t.drained && !t.shutDown) || t.parked > 0 || len(t.processing) > 0 || t.gotThisTick
 }
 
 // busyLocked reports whether the queue owes any work: an item is queued or
-// processing in the ledger, an AddAfter deadline has passed for an item not
-// yet dequeued, or the underlying queue holds an item. Len catches items the
-// ledger cannot see: rate-limited requeues that have left the delay heap, and
-// items added to the underlying queue before it was wrapped.
+// processing in the ledger. After ShutDown the queue owes only the reconciles
+// already processing: workers stop dequeuing, so items left in the queue would
+// never drain.
 //
-// After ShutDown the queue owes only the reconciles already processing:
-// workers stop dequeuing, so items left in the queue would never drain.
-//
-// One case remains uncovered: a rate-limited requeue between the underlying
-// Get returning it and the wrapper recording it. DSK cannot see its deadline.
-func (w *wrappedQueue[T]) busyLocked() bool {
-	if len(w.processing) > 0 {
+// A tracker that is not exact also counts an item whose requeue deadline has
+// passed and that has not been dequeued since, and any item in the underlying
+// queue (Len). Len catches rate-limited requeues that have left the delay
+// heap, and items added before the queue was wrapped. One case remains: a
+// rate-limited requeue between the underlying Get returning it and the
+// tracker recording it. NewRateLimitingQueue closes that case.
+func (t *queueTracker[T]) busyLocked() bool {
+	if len(t.processing) > 0 {
 		return true
 	}
-	if w.shutDown {
+	if t.shutDown {
 		return false
 	}
-	return len(w.queued) > 0 ||
-		w.requeues.due() ||
-		w.Len() > 0
+	if len(t.queued) > 0 {
+		return true
+	}
+	if t.exact {
+		return false
+	}
+	return t.requeues.due() || t.len() > 0
 }
 
 // isIdle reports whether the queue owes no work. Items still in the delay heap
-// (AddRateLimited, or AddAfter with d > 0 before its deadline) do not count;
-// pendingRequeues reports them.
-func (w *wrappedQueue[T]) isIdle() bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return !w.busyLocked()
+// before their deadline do not count; pendingRequeues reports them.
+func (t *queueTracker[T]) isIdle() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return !t.busyLocked()
 }
 
-// addLocked records that item is owed work. Must be called before the
-// underlying Add, so a Get that races with it finds the item in queued.
-func (w *wrappedQueue[T]) addLocked(item T) {
-	if w.shutDown {
+func (t *queueTracker[T]) pendingRequeues() requeueStatus {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.requeues.status()
+}
+
+// addLocked records that item is owed work.
+func (t *queueTracker[T]) addLocked(item T) {
+	if t.shutDown {
 		return
 	}
-	if _, ok := w.processing[item]; ok {
-		w.dirty[item] = struct{}{}
+	if _, ok := t.processing[item]; ok {
+		t.dirty[item] = struct{}{}
 	} else {
-		w.queued[item] = struct{}{}
+		t.queued[item] = struct{}{}
 	}
-	if w.windowOpen {
-		w.active = true
+	if t.windowOpen {
+		t.active = true
 	}
 }
 
-// Add records the item in the ledger, then enqueues it.
-func (w *wrappedQueue[T]) Add(item T) {
-	w.mu.Lock()
-	w.addLocked(item)
-	w.mu.Unlock()
-	w.TypedRateLimitingInterface.Add(item)
+// recordAdd must be called before the underlying Add, so a Get that races
+// with it finds the item in queued.
+func (t *queueTracker[T]) recordAdd(item T) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.addLocked(item)
 }
 
-// AddRateLimited is a controller-triggered requeue. Not counted as owed work,
-// but recorded as a pending requeue until the item is next dequeued.
-func (w *wrappedQueue[T]) AddRateLimited(item T) {
-	w.mu.Lock()
-	if !w.shutDown {
-		w.requeues.addRateLimited(item)
+// recordDeadline records a requeue that the delaying queue will add at
+// now+d. A non-positive d is added at once, through Add.
+func (t *queueTracker[T]) recordDeadline(item T, d time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.shutDown {
+		t.requeues.addAfter(item, d)
 	}
-	w.mu.Unlock()
-	w.TypedRateLimitingInterface.AddRateLimited(item)
 }
 
-// AddAfter is a controller-triggered requeue. A positive duration is recorded
-// as a pending requeue with its deadline, and counts as owed work once the
-// deadline passes. The delaying queue adds a non-positive duration at once,
-// so that is recorded as an Add.
-func (w *wrappedQueue[T]) AddAfter(item T, duration time.Duration) {
-	w.mu.Lock()
-	if duration <= 0 {
-		w.addLocked(item)
-	} else if !w.shutDown {
-		w.requeues.addAfter(item, duration)
+// recordRateLimited records an AddRateLimited whose delay DSK cannot see.
+func (t *queueTracker[T]) recordRateLimited(item T) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.shutDown {
+		t.requeues.addRateLimited(item)
 	}
-	w.mu.Unlock()
-	w.TypedRateLimitingInterface.AddAfter(item, duration)
 }
 
-// ShutDown shuts the underlying queue down and drops the work it will no longer
-// hand out. Items already processing stay in the ledger until Done.
-func (w *wrappedQueue[T]) ShutDown() {
-	w.TypedRateLimitingInterface.ShutDown()
-	w.shutDownLedger()
+func (t *queueTracker[T]) beforeGet() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.parked++
 }
 
-// ShutDownWithDrain is like ShutDown, but blocks until processing items are Done.
-func (w *wrappedQueue[T]) ShutDownWithDrain() {
-	w.TypedRateLimitingInterface.ShutDownWithDrain()
-	w.shutDownLedger()
-}
-
-func (w *wrappedQueue[T]) shutDownLedger() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.shutDown = true
-	w.requeues.clear()
-	clear(w.queued)
-	clear(w.dirty)
-	w.checkDoneLocked()
-	w.idleCond.Broadcast()
-}
-
-func (w *wrappedQueue[T]) pendingRequeues() requeueStatus {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.requeues.status()
-}
-
-// Get dequeues an item and records it as processing. While the caller is
-// parked in the underlying Get, the tick does not complete with work queued.
-func (w *wrappedQueue[T]) Get() (T, bool) {
-	w.mu.Lock()
-	w.parked++
-	w.mu.Unlock()
-
-	item, shutdown := w.TypedRateLimitingInterface.Get()
-
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.parked--
+// recordGet moves item from queued to processing. While a caller is parked in
+// the underlying Get, the tick does not complete with work queued.
+func (t *queueTracker[T]) recordGet(item T, shutdown bool) {
+	if t.afterGet != nil {
+		t.afterGet()
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.parked--
 	if !shutdown {
-		delete(w.queued, item)
-		w.processing[item] = struct{}{}
-		w.requeues.got(item)
-		w.gotThisTick = true
-		if w.windowOpen {
-			w.active = true
+		delete(t.queued, item)
+		t.processing[item] = struct{}{}
+		t.requeues.got(item)
+		t.gotThisTick = true
+		if t.windowOpen {
+			t.active = true
 		}
-		if !w.tickOver {
-			w.inFlight[item] = struct{}{}
+		if !t.tickOver {
+			t.inFlight[item] = struct{}{}
 		}
 	}
-	w.checkDoneLocked()
-	w.idleCond.Broadcast()
-	return item, shutdown
+	t.checkDoneLocked()
+	t.idleCond.Broadcast()
 }
 
-// Done records the end of a reconcile, then tells the underlying queue. A
-// dirty item goes back to queued: the workqueue hands it out again.
-func (w *wrappedQueue[T]) Done(item T) {
-	w.mu.Lock()
-	delete(w.processing, item)
-	delete(w.inFlight, item)
-	if _, ok := w.dirty[item]; ok {
-		delete(w.dirty, item)
-		w.queued[item] = struct{}{}
+// recordDone must be called before the underlying Done. A dirty item goes back
+// to queued: the workqueue hands it out again.
+func (t *queueTracker[T]) recordDone(item T) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.processing, item)
+	delete(t.inFlight, item)
+	if _, ok := t.dirty[item]; ok {
+		delete(t.dirty, item)
+		t.queued[item] = struct{}{}
 	}
-	w.checkDoneLocked()
-	w.idleCond.Broadcast()
-	w.mu.Unlock()
-	w.TypedRateLimitingInterface.Done(item)
+	t.checkDoneLocked()
+	t.idleCond.Broadcast()
+}
+
+// recordShutDown drops the work the queue will no longer hand out. Items
+// already processing stay in the ledger until Done.
+func (t *queueTracker[T]) recordShutDown() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.shutDown = true
+	t.requeues.clear()
+	clear(t.queued)
+	clear(t.dirty)
+	t.checkDoneLocked()
+	t.idleCond.Broadcast()
 }
 
 // waitForIdle blocks until the queue owes no work (see busyLocked), or ctx is
 // cancelled. It waits only if Add or Get was called while this tick's window
-// was open, or a worker is draining the queue. A queue whose items are never
+// was open, or a worker drains the queue. A queue whose items are never
 // dequeued does not block, so TickUntilSteady still exhausts its tick budget
 // for a controller that never drains its queue.
 //
 // Called by TickUntilSteady and Advance after each tick, not by Flush, so a
 // test can drain a queue by hand after Tick returns.
-func (w *wrappedQueue[T]) waitForIdle(ctx context.Context) error {
+func (t *queueTracker[T]) waitForIdle(ctx context.Context) error {
 	stopCh := make(chan struct{})
 	go func() {
 		select {
 		case <-ctx.Done():
-			w.idleCond.Broadcast()
+			t.idleCond.Broadcast()
 		case <-stopCh:
 		}
 	}()
 	defer close(stopCh)
 
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if !w.active && !w.workerSeenLocked() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.active && !t.workerSeenLocked() {
 		return ctx.Err()
 	}
-	for w.busyLocked() {
+	for t.busyLocked() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		w.idleCond.Wait()
+		t.idleCond.Wait()
 	}
 	return ctx.Err()
 }
 
 // checkDoneLocked closes the done channel once the tick is complete: the
 // window is closed, every item dequeued during the tick is Done, and no
-// queued item is waiting for a worker that is draining the queue. A worker
-// whose Get lands after the window closes is still counted, because the tick
-// stays open while it is parked with work queued.
+// queued item is waiting for a worker that drains the queue. A worker whose
+// Get lands after the window closes is still counted, because the tick stays
+// open while a worker is seen with work queued.
 //
-// Items queued with no worker draining the queue do not block the tick, so a
-// test can drain by hand after Tick returns. IsSteady reports them.
+// Items queued with no worker seen do not block the tick, so a test can drain
+// by hand after Tick returns. IsSteady reports them.
 //
-// Must be called with w.mu held.
-func (w *wrappedQueue[T]) checkDoneLocked() {
-	if w.tickOver || w.windowOpen || len(w.inFlight) > 0 {
+// Must be called with t.mu held.
+func (t *queueTracker[T]) checkDoneLocked() {
+	if t.tickOver || t.windowOpen || len(t.inFlight) > 0 {
 		return
 	}
-	if len(w.queued) > 0 && w.workerSeenLocked() {
+	if len(t.queued) > 0 && t.workerSeenLocked() {
 		return
 	}
-	w.tickOver = true
-	close(w.done)
+	t.tickOver = true
+	close(t.done)
+}
+
+// wrappedQueue wraps a finished workqueue.TypedRateLimitingInterface[T] for
+// WrapQueue and WrapTypedQueue. WrapQueue uses wrappedQueue[any]: client-go
+// defines RateLimitingInterface as TypedRateLimitingInterface[any].
+type wrappedQueue[T comparable] struct {
+	workqueue.TypedRateLimitingInterface[T]
+	*queueTracker[T]
+}
+
+func newWrappedQueue[T comparable](q workqueue.TypedRateLimitingInterface[T], opts ...QueueOption) *wrappedQueue[T] {
+	return &wrappedQueue[T]{
+		TypedRateLimitingInterface: q,
+		queueTracker:               newQueueTracker[T](false, q.Len, opts),
+	}
+}
+
+func (w *wrappedQueue[T]) Add(item T) {
+	w.recordAdd(item)
+	w.TypedRateLimitingInterface.Add(item)
+}
+
+// AddRateLimited is recorded as a pending requeue until the item is next
+// dequeued. Its delay comes from the rate limiter, which DSK cannot see here.
+func (w *wrappedQueue[T]) AddRateLimited(item T) {
+	w.recordRateLimited(item)
+	w.TypedRateLimitingInterface.AddRateLimited(item)
+}
+
+// AddAfter with a positive duration is recorded as a pending requeue with its
+// deadline. The delaying queue adds a non-positive duration at once, so that
+// is recorded as an Add.
+func (w *wrappedQueue[T]) AddAfter(item T, duration time.Duration) {
+	if duration <= 0 {
+		w.recordAdd(item)
+	} else {
+		w.recordDeadline(item, duration)
+	}
+	w.TypedRateLimitingInterface.AddAfter(item, duration)
+}
+
+func (w *wrappedQueue[T]) Get() (T, bool) {
+	w.beforeGet()
+	item, shutdown := w.TypedRateLimitingInterface.Get()
+	w.recordGet(item, shutdown)
+	return item, shutdown
+}
+
+func (w *wrappedQueue[T]) Done(item T) {
+	w.recordDone(item)
+	w.TypedRateLimitingInterface.Done(item)
+}
+
+func (w *wrappedQueue[T]) ShutDown() {
+	w.TypedRateLimitingInterface.ShutDown()
+	w.recordShutDown()
+}
+
+func (w *wrappedQueue[T]) ShutDownWithDrain() {
+	w.TypedRateLimitingInterface.ShutDownWithDrain()
+	w.recordShutDown()
+}
+
+// baseQueue is the FIFO at the bottom of a queue built by NewRateLimitingQueue.
+// The delaying queue adds requeues that come due through baseQueue.Add, so the
+// tracker sees every Add.
+type baseQueue[T comparable] struct {
+	workqueue.TypedInterface[T]
+	t *queueTracker[T]
+}
+
+func (b *baseQueue[T]) Add(item T) {
+	b.t.recordAdd(item)
+	b.TypedInterface.Add(item)
+}
+
+func (b *baseQueue[T]) Get() (T, bool) {
+	b.t.beforeGet()
+	item, shutdown := b.TypedInterface.Get()
+	b.t.recordGet(item, shutdown)
+	return item, shutdown
+}
+
+func (b *baseQueue[T]) Done(item T) {
+	b.t.recordDone(item)
+	b.TypedInterface.Done(item)
+}
+
+func (b *baseQueue[T]) ShutDown() {
+	b.TypedInterface.ShutDown()
+	b.t.recordShutDown()
+}
+
+func (b *baseQueue[T]) ShutDownWithDrain() {
+	b.TypedInterface.ShutDownWithDrain()
+	b.t.recordShutDown()
+}
+
+// deadlineLimiter reports each AddRateLimited delay to the tracker, so a
+// rate-limited requeue has a deadline that NextRequeue can see.
+type deadlineLimiter[T comparable] struct {
+	workqueue.TypedRateLimiter[T]
+	t *queueTracker[T]
+}
+
+func (l *deadlineLimiter[T]) When(item T) time.Duration {
+	d := l.TypedRateLimiter.When(item)
+	l.t.recordDeadline(item, d)
+	return d
+}
+
+// requeueQueue is the top of a queue built by NewRateLimitingQueue. It records
+// AddAfter deadlines for HasPendingRequeues and NextRequeue; the base queue
+// records everything else.
+type requeueQueue[T comparable] struct {
+	workqueue.TypedRateLimitingInterface[T]
+	t *queueTracker[T]
+}
+
+func (r *requeueQueue[T]) AddAfter(item T, duration time.Duration) {
+	r.t.recordDeadline(item, duration)
+	r.TypedRateLimitingInterface.AddAfter(item, duration)
+}
+
+// newRateLimitingQueue builds the queue stack for DSK.NewRateLimitingQueue.
+// cfg.DelayingQueue and cfg.Clock must be nil.
+func newRateLimitingQueue[T comparable](rl workqueue.TypedRateLimiter[T], cfg workqueue.TypedRateLimitingQueueConfig[T], opts []QueueOption) (workqueue.TypedRateLimitingInterface[T], *queueTracker[T]) {
+	t := newQueueTracker[T](true, nil, opts)
+	base := &baseQueue[T]{
+		TypedInterface: workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[T]{
+			Name:            cfg.Name,
+			MetricsProvider: cfg.MetricsProvider,
+		}),
+		t: t,
+	}
+	delaying := workqueue.NewTypedDelayingQueueWithConfig(workqueue.TypedDelayingQueueConfig[T]{
+		Name:            cfg.Name,
+		MetricsProvider: cfg.MetricsProvider,
+		Queue:           base,
+	})
+	q := workqueue.NewTypedRateLimitingQueueWithConfig[T](&deadlineLimiter[T]{TypedRateLimiter: rl, t: t}, workqueue.TypedRateLimitingQueueConfig[T]{
+		Name:            cfg.Name,
+		MetricsProvider: cfg.MetricsProvider,
+		DelayingQueue:   delaying,
+	})
+	return &requeueQueue[T]{TypedRateLimitingInterface: q, t: t}, t
 }
